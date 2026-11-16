@@ -5,22 +5,12 @@
 */
 window.SALON_CONFIG = {
   firebase: {
-    apiKey: "PEGAR_API_KEY",
+    apiKey: ahi"AIzaSyBekWfILK3YGuO6g7mCU47Dp-jdKBC84TM",
     authDomain: "salon-dorado.firebaseapp.com",
     projectId: "salon-dorado",
     storageBucket: "salon-dorado.firebasestorage.app",
     messagingSenderId: "159775673600",
-    appId: "PEGAR_APP_ID"
+    appId: "1:159775673600:web:dbd885918d5d8bd9eb77e5"
   },
 };
-  /* Ejemplo:
-  firebase: {
-    apiKey: "AIza...",
-    authDomain: "salon-dorado-xxxx.firebaseapp.com",
-    projectId: "salon-dorado-xxxx",
-    storageBucket: "salon-dorado-xxxx.appspot.com",
-    messagingSenderId: "1234567890",
-    appId: "1:1234567890:web:abcdef"
-  },
-  */
-};
+
