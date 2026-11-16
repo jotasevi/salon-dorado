@@ -4,14 +4,13 @@
   Si "firebase" queda en null, la app abre en MODO DEMOSTRACIÓN (datos de ejemplo guardados solo en el navegador).
 */
 window.SALON_CONFIG = {
-window.SALON_CONFIG = {
   firebase: {
-    apiKey: "AIza...",
+    apiKey: "PEGAR_API_KEY",
     authDomain: "salon-dorado.firebaseapp.com",
     projectId: "salon-dorado",
     storageBucket: "salon-dorado.firebasestorage.app",
     messagingSenderId: "159775673600",
-    appId: "1:159775673600:web:..."
+    appId: "PEGAR_APP_ID"
   },
 };
   /* Ejemplo:
