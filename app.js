@@ -170,6 +170,20 @@ function migrarConfig() {
   pend.forEach(k => Object.entries(MIGRACIONES[k]).forEach(([lista, items]) => { if (listas[lista]) listas[lista] = [...listas[lista], ...items.filter(i => !listas[lista].includes(i))]; }));
   DB.save('config', { ...g, listas, migraciones: [...hechas, ...pend] });
 }
+// una sola vez (pedido de Juan, nov 2026): los domingos por venir que tenían mínimo 100 pasan a 120.
+// Los eventos que se pasan quedan anotados en config.domingos120 por si hay que revisarlos.
+function migrarDomingos() {
+  const g = S.config.general; if (!g || (g.migraciones || []).includes('domingos120')) return;
+  const hoy = todayISO(), cambiados = [];
+  Object.values(S.eventos).filter(e => e.estado !== 'cancelado' && e.fecha >= hoy && dow(e.fecha) === 0 && e.cuenta && num(e.cuenta.minimo) === 100).forEach(e => {
+    const cu = { ...e.cuenta, minimo: 120 };
+    if (num(cu.cubiertosIniciales) < 120) cu.cubiertosIniciales = 120;
+    DB.save('eventos', { ...clean(e), cuenta: cu }, true);
+    cambiados.push(e.id);
+  });
+  DB.save('config', { ...S.config.general, migraciones: [...((S.config.general || {}).migraciones || []), 'domingos120'], domingos120: cambiados });
+  if (cambiados.length) toast(`Se pasaron ${cambiados.length} ${cambiados.length === 1 ? 'domingo' : 'domingos'} a mínimo 120 cubiertos.`);
+}
 
 const DB = {
   mode: FIREBASE_ON ? 'firebase' : 'demo',
@@ -183,7 +197,7 @@ const DB = {
       try { raw = localStorage.getItem(this.LS_KEY); } catch (e) { }
       if (raw) { try { Object.assign(S, JSON.parse(raw)); COLS.forEach(c => S[c] = S[c] || {}); } catch (e) { } }
       else seedDemo();
-      migrarConfig();
+      migrarConfig(); migrarDomingos();
       return;
     }
     const v = '10.12.2', base = `https://www.gstatic.com/firebasejs/${v}/`;
@@ -226,6 +240,7 @@ const DB = {
     // primera vez: carga el catálogo de extras y la configuración
     if (!S.config.general) this.save('config', { ...clean(DEFAULT_CONFIG), id: 'general', migraciones: Object.keys(MIGRACIONES) });
     else migrarConfig();
+    migrarDomingos();
     if (!Object.keys(S.extrasCat).length && !(S.config.general || {}).catalogoCargado) {
       EXTRAS_INICIALES.forEach(([grupo, nombre, precio, desc], i) => this.save('extrasCat', { grupo, nombre, precio, costo: null, desc, orden: i, activo: true }, true));
       this.save('config', { ...(S.config.general || clean(DEFAULT_CONFIG)), id: 'general', catalogoCargado: true });
