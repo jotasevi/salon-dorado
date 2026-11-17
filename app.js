@@ -1186,9 +1186,9 @@ VIEWS.metricas = (anio) => {
     <div class="card ${T('resultado') >= 0 ? 'good' : 'bad'}"><div class="k">Resultado de caja</div><div class="v">${fmt$(T('resultado'))}</div></div>
   </div>
   <div class="panel tbl-wrap"><h2>Caja: lo que entró y salió cada mes</h2>
-  <p class="small muted" style="margin-top:-4px">Ingresos por fecha de cobro. Costo de extras en el mes del evento. Los pesos son nominales: con inflación, comparar meses lejanos exagera el crecimiento.</p>
+  <p class="small muted" style="margin-top:-4px">Ingresos por fecha de cobro. <b>Tocá un mes para ver de qué cliente y evento vino cada cobro.</b> Costo de extras en el mes del evento. Los pesos son nominales: con inflación, comparar meses lejanos exagera el crecimiento.</p>
   <table><thead><tr><th>Mes</th><th class="num">Reservas cerradas</th><th class="num">Eventos</th><th class="num">Cobrado cubiertos</th><th class="num">Cobrado extras</th><th class="num">Egresos</th><th class="num">Costo extras</th><th class="num">Resultado</th></tr></thead><tbody>
-  ${rows.map(r => `<tr><td>${r.mn}</td><td class="num">${r.reservasHechas || ''}</td><td class="num"><span style="display:inline-block;height:8px;background:var(--gold-2);border-radius:4px;width:${r.eventos / maxEv * 50}px;margin-right:6px"></span>${r.eventos || ''}</td><td class="num">${r.cajaCub ? fmt$(r.cajaCub) : ''}</td><td class="num">${r.cajaExt ? fmt$(r.cajaExt) : ''}</td><td class="num">${r.egresos ? fmt$(r.egresos) : ''}</td><td class="num">${r.costoExt ? fmt$(r.costoExt) : ''}</td><td class="num" style="color:${r.resultado < 0 ? 'var(--rojo)' : 'inherit'}">${r.resultado ? fmt$(r.resultado) : ''}</td></tr>`).join('')}
+  ${rows.map(r => `<tr class="click" data-mes="${r.m}" title="Ver el detalle de lo cobrado en ${r.mn}"><td class="nowrap">${r.mn} <span class="small muted">›</span></td><td class="num">${r.reservasHechas || ''}</td><td class="num"><span style="display:inline-block;height:8px;background:var(--gold-2);border-radius:4px;width:${r.eventos / maxEv * 50}px;margin-right:6px"></span>${r.eventos || ''}</td><td class="num">${r.cajaCub ? fmt$(r.cajaCub) : ''}</td><td class="num">${r.cajaExt ? fmt$(r.cajaExt) : ''}</td><td class="num">${r.egresos ? fmt$(r.egresos) : ''}</td><td class="num">${r.costoExt ? fmt$(r.costoExt) : ''}</td><td class="num" style="color:${r.resultado < 0 ? 'var(--rojo)' : 'inherit'}">${r.resultado ? fmt$(r.resultado) : ''}</td></tr>`).join('')}
   </tbody><tfoot><tr><td>Total</td><td class="num">${T('reservasHechas')}</td><td class="num">${T('eventos')}</td><td class="num">${fmt$(T('cajaCub'))}</td><td class="num">${fmt$(T('cajaExt'))}</td><td class="num">${fmt$(T('egresos'))}</td><td class="num">${fmt$(T('costoExt'))}</td><td class="num">${fmt$(T('resultado'))}</td></tr></tfoot></table>
   ${T('cajaIva') ? `<p class="small muted">IVA cobrado en el año (no incluido arriba): ${fmt$(T('cajaIva'))}</p>` : ''}</div>
 
@@ -1203,6 +1203,34 @@ VIEWS.metricas = (anio) => {
     <div class="panel"><h3>Eventos ${y} por tipo</h3>${Object.keys(tiposAnio).length ? `<table><tbody>${Object.entries(tiposAnio).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<tr><td>${esc(c)}</td><td class="num">${v}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Sin eventos.</p>'}</div>
   </div>`;
 };
+
+VIEWS.metricas.after = () => {
+  $$('[data-mes]').forEach(tr => tr.onclick = () => detalleCobrosMes(tr.dataset.mes));
+};
+// cada cobro del mes (cubiertos, IVA y extras), con su cliente y evento
+function cobrosDelMes(m) {
+  const out = [];
+  eventosActivos().forEach(e => {
+    const c = nombreCli(cli(e.clienteId)), k = getCuenta(e);
+    k.pagos.forEach(p => { if (ym(p.fecha) === m) out.push({ fecha: p.fecha, e, cliente: c, concepto: p.tipo === 'iva' ? 'IVA' : p.sena ? 'Seña' : 'Cubiertos', medio: medioTxt(p), monto: num(p.monto), iva: p.tipo === 'iva', nota: p.nota || '' }); });
+    (e.extras || []).forEach(l => (l.pagos || []).forEach(p => { if (ym(p.fecha) === m) out.push({ fecha: p.fecha, e, cliente: c, concepto: 'Extra: ' + (l.nombre || ''), medio: medioTxt(p), monto: num(p.monto), iva: false, nota: p.nota || '' }); }));
+  });
+  return out.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.cliente.localeCompare(b.cliente));
+}
+function detalleCobrosMes(m) {
+  const list = cobrosDelMes(m), sinIva = list.filter(x => !x.iva), iva = list.filter(x => x.iva);
+  // resumen por cliente/evento
+  const porEv = {}; sinIva.forEach(x => { const o = porEv[x.e.id] = porEv[x.e.id] || { x, total: 0 }; o.total += x.monto; });
+  const resumen = Object.values(porEv).sort((a, b) => b.total - a.total);
+  const body = list.length ? `<div class="full tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Evento</th><th>Fecha evento</th><th>Concepto</th><th>Medio</th><th class="num">Monto</th></tr></thead><tbody>
+    ${list.map(x => `<tr class="click" data-ev="${x.e.id}"${x.nota ? ` title="${esc(x.nota)}"` : ''}><td class="nowrap">${fmtD(x.fecha)}</td><td>${esc(x.cliente)}</td><td>${esc(tituloEv(x.e))}</td><td class="nowrap">${fmtD(x.e.fecha)}</td><td>${esc(x.concepto)}</td><td class="small">${esc(x.medio)}</td><td class="num">${fmt$(x.monto)}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td colspan="6">Total cobrado${iva.length ? ' (sin IVA)' : ''}</td><td class="num">${fmt$(sum(sinIva, x => x.monto))}</td></tr>${iva.length ? `<tr><td colspan="6">IVA cobrado</td><td class="num">${fmt$(sum(iva, x => x.monto))}</td></tr>` : ''}</tfoot></table></div>
+    ${resumen.length > 1 ? `<div class="full"><h3 style="margin:14px 0 6px">Por cliente</h3><table><tbody>${resumen.map(o => `<tr class="click" data-ev="${o.x.e.id}"><td>${esc(o.x.cliente)}</td><td class="small">${esc(tituloEv(o.x.e))} · ${fmtD(o.x.e.fecha)}</td><td class="num">${fmt$(o.total)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <p class="small muted full">Tocá una fila para abrir la ficha del evento.</p>`
+    : '<p class="muted full">No hubo cobros este mes.</p>';
+  const { d, close } = modal({ title: 'Cobros de ' + fmtYM(m), body, submit: null, wide: true });
+  $$('[data-ev]', d).forEach(tr => tr.onclick = () => { close(); go('evento/' + tr.dataset.ev); });
+}
 
 /* ---------- CONFIGURACIÓN ---------- */
 VIEWS.config = () => {
