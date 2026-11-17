@@ -5,7 +5,7 @@
 */
 window.SALON_CONFIG = {
   firebase: {
-    apiKey: ahi"AIzaSyBekWfILK3YGuO6g7mCU47Dp-jdKBC84TM",
+    apiKey: "AIzaSyBekWfILK3YGuO6g7mCU47Dp-jdKBC84TM",
     authDomain: "salon-dorado.firebaseapp.com",
     projectId: "salon-dorado",
     storageBucket: "salon-dorado.firebasestorage.app",
