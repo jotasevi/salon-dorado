@@ -123,6 +123,7 @@ const DEFAULT_CONFIG = {
   feriadosQuitados: [],
   feriadosNombres: {},
   aniosExtra: [],
+  contratoResp: {},   // { email: { nombre, dni } } quién firma por el salón
 };
 const LISTA_LABELS = {
   tipos: 'Tipos de evento', menus: 'Menús', principalAdultos: 'Plato principal adultos', guarnicionAdultos: 'Guarnición adultos',
@@ -546,7 +547,7 @@ function render() {
     aplicarTema();
   }
   const { view, args } = route();
-  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos' }[view] || view;
+  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos', contrato: 'eventos' }[view] || view;
   $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === navKey));
   const main = $('#main');
   const fn = VIEWS[view] || VIEWS.inicio;
@@ -868,13 +869,14 @@ VIEWS.evento = id => {
       <h1>${esc(tituloEv(e) || 'Evento')}</h1>
       <div>${badgeEstado(e)} <b>${fmtDL(e.fecha)}</b> ${dias >= 0 ? `<span class="muted">· faltan ${dias} días</span>` : '<span class="muted">· realizado</span>'}</div></div>
     <div class="actions">${c.celular ? `<a class="btn btn-wa" target="_blank" href="${waLink(c.celular)}">WhatsApp</a>` : ''}
-      <button id="edEv">Editar datos</button><button data-go="orden/${id}" title="Menú, bebidas, menús especiales y ambientación, sin precios">Hoja para cocina y organizadora</button><button class="btn-gold" data-go="imprimir/${id}">Imprimir estado de cuenta</button></div></div>
+      <button id="edEv">Editar datos</button><button data-go="contrato/${id}">Contrato</button><button data-go="orden/${id}" title="Menú, bebidas, menús especiales y ambientación, sin precios">Hoja para cocina y organizadora</button><button class="btn-gold" data-go="imprimir/${id}">Imprimir estado de cuenta</button></div></div>
 
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h3>Cliente</h3><a href="#/cliente/${e.clienteId}">Ver ficha</a></div>
       <dl class="kv"><dt>Nombre</dt><dd>${esc(nombreCli(c))}</dd><dt>Celular</dt><dd>${esc(fmtTel(c.celular)) || '—'}</dd><dt>Familia</dt><dd>${esc(c.familia || '—')}</dd>
       <dt>Contrató</dt><dd>${fmtD(e.fechaContratacion) || '—'}</dd><dt>Invitados inicial</dt><dd>${e.invitados || '—'}</dd>
       ${e.estado === 'pendiente' ? `<dt>Vence</dt><dd>${fmtD(e.vencePendiente) || '—'}</dd>` : ''}
+      <dt>Contrato</dt><dd>${linkOk(e.contratoLink) ? `<a target="_blank" rel="noopener" href="${esc(e.contratoLink)}">📎 Ver contrato firmado</a>` : `<a href="#/contrato/${id}" class="muted">Sin copia firmada · armar contrato</a>`}</dd>
       ${e.notas ? `<dt>Notas</dt><dd>${esc(e.notas)}</dd>` : ''}</dl></div>
     <div class="panel"><div class="panel-h"><h3>Menú</h3><button class="btn-sm" id="edMenu">Editar menú</button></div>
       <dl class="kv"><dt>Menú</dt><dd>${esc(menu.menu || '—')}</dd><dt>Principal adultos</dt><dd>${esc(menu.principalAdultos || '—')}</dd><dt>Guarnición adultos</dt><dd>${esc(menu.guarnicionAdultos || '—')}</dd>
@@ -1511,6 +1513,142 @@ VIEWS.timing = id => {
 VIEWS.timing.after = id => {
   $$('[data-to]').forEach(i => i.onchange = () => { TIMING_OPTS[i.dataset.to] = i.checked; render(); });
   const b = $('#edT2'); if (b) b.onclick = () => formTiming(id);
+};
+
+/* ---------- contrato para firmar (se completa con los datos del evento) ---------- */
+const linkOk = u => /^https?:\/\//i.test(String(u || '').trim());
+const CT_CAMPOS = [
+  ['fecha', 'Fecha del contrato', 'date'], ['resp', 'Responsable del salón', 'text'], ['respDni', 'DNI del responsable', 'text'],
+  ['recibiDe', 'Recibí de (Sr./Sra.)', 'text'], ['monto', 'Suma recibida ($)', 'num'], ['concepto', 'En concepto de', 'concepto'],
+  ['desde', 'Horario desde', 'time'], ['hasta', 'Horario hasta', 'time'], ['festejo', 'Festejando', 'text'], ['de', 'De (homenajeado/a)', 'text'],
+  ['valor', 'Costo por persona ($)', 'num'], ['fijoHasta', 'Valor fijo hasta el', 'date'], ['indiceMes', 'Ajusta desde el índice de', 'month'],
+  ['invitados', 'Invitados estimados', 'num'], ['minimo', 'Mínimo de cubiertos enteros', 'num'], ['tel', 'Teléfono del cliente', 'text'],
+];
+const CT_CONCEPTOS = ['Seña', 'Pago Parcial', 'Pago Total'];
+let CT_DRAFT = null;   // { id, datos } lo que se está editando antes de guardar
+function contratoAuto(e) {
+  const c = cli(e.clienteId) || {}, k = calcCuenta(e), cu = k.c;
+  const pagos = (cu.pagos || []).filter(x => x.tipo !== 'iva').sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  const pg = pagos.find(x => x.sena) || pagos[0];
+  const finCong = addMonths(k.desde, num(cu.mesesCongelado));
+  const [fy, fm] = finCong.split('-').map(Number);
+  const t = tieneTiming(e) ? tramosTiming(e.timing) : [];
+  const yo = (CONF().contratoResp || {})[((DB.user || {}).email || '').toLowerCase()] || {};
+  return {
+    fecha: e.fechaContratacion || todayISO(), resp: yo.nombre || '', respDni: yo.dni || '',
+    recibiDe: nombreCli(c), monto: pg ? String(num(pg.monto)) : '', concepto: 'Seña',
+    desde: t.length ? t[0].hora : '', hasta: t.length ? t[t.length - 1].hasta : '',
+    festejo: tipoEv(e), de: e.homenajeado || '',
+    valor: num(cu.valorBase) ? String(num(cu.valorBase)) : '', fijoHasta: num(cu.valorBase) ? `${finCong}-${pad(new Date(fy, fm, 0).getDate())}` : '', indiceMes: num(cu.valorBase) ? finCong : '',
+    invitados: e.invitados ? String(e.invitados) : '', minimo: String(num(cu.minimo) || ''), tel: fmtTel(c.celular) || '',
+  };
+}
+function contratoDatos(e) {
+  if (CT_DRAFT && CT_DRAFT.id === e.id) return CT_DRAFT.datos;
+  const auto = contratoAuto(e), g = e.contrato || {};
+  const d = {}; CT_CAMPOS.forEach(([k]) => d[k] = k in g ? g[k] : auto[k]);
+  return d;
+}
+function contratoDoc(e, d) {
+  const C = CONF(), sena = num(C.sena) || 20, semana = num(C.reservaSemana) || 30;
+  const v = (x, w = 90) => x !== '' && x !== null && x !== undefined ? `<b class="ct-v">${esc(x)}</b>` : `<span class="ct-b" style="min-width:${w}px"></span>`;
+  const [y, m, dd] = (d.fecha || '').split('-');
+  const [ey, em, ed] = (e.fecha || '').split('-');
+  const [hy, hm, hd] = (d.fijoHasta || '').split('-');
+  const [iy, im] = (d.indiceMes || '').split('-');
+  const mes = n => n ? MESES[+n - 1].toLowerCase() : '';
+  const plata = x => x !== '' && x !== undefined ? Math.round(num(x)).toLocaleString('es-AR') : '';
+  const hs = h => h ? fmtHora(h) : '';
+  const conc = CT_CONCEPTOS.map(t => t === d.concepto ? `<b class="ct-v">${t}</b>` : `<s style="color:#999">${t}</s>`).join(' / ');
+  return `<div class="print-doc contrato-doc">
+    <div class="ct-logo"><img src="${LOGO}" alt="Salón Dorado"></div>
+    <p>En C.A.B.A, a los ${v(dd ? +dd : '', 40)} días del mes de ${v(mes(m), 120)} del ${v(y, 60)}.</p>
+    <p>Yo ${v(d.resp, 160)} DNI ${v(d.respDni, 110)} en carácter de responsable del Salón Dorado, sito en Av. Monroe 4878, C.A.B.A. dejo constancia de haber recibido de parte
+    del Sr./Sra ${v(d.recibiDe, 260)} la suma de $ ${v(plata(d.monto), 160)} en concepto de ${conc} correspondiente a la contratación del Salón Dorado para la
+    realización de un evento <u>PRIVADO</u>, con <u>Lista de Invitados</u>, a llevarse a cabo el día ${v(ed ? +ed : '', 40)} de ${v(mes(em), 110)} de ${v(ey, 60)} en el horario de ${v(hs(d.desde), 60)} a ${v(hs(d.hasta), 60)} hs. festejando
+    ${v(d.festejo, 150)} de ${v(d.de, 200)}.</p>
+    <p>El evento se celebrará en el Salón Dorado, incluyendo el servicio de comida y bebidas y demás prestaciones que se detallan en cartilla adjunta.</p>
+    <p>El costo del mismo es de $ ${v(plata(d.valor), 110)} por persona, cuyo valor se mantendrá hasta el ${v(hd ? +hd : '', 40)} de ${v(mes(hm), 110)} de ${v(hy, 60)}, luego se irá ajustando mes a mes en forma
+    acumulativa tomando como referencia el Índice de Precios al Consumidor o en su defecto el que lo reemplace brindado por el INDEC a partir del índice del mes de
+    ${v(im ? mes(im) + ' de ' + iy : '', 130)}. Para hacerse efectiva dicha contratación deberá abonarse el importe correspondiente a ${sena} cubiertos al momento de la misma. Los pagos se realizarán en
+    efectivo en el Salón. Para otras formas de pagos consultar previamente ya que podrán sufrir algún tipo de recargos. (Ej. + IVA). Se podrá ir cancelando y congelando cubiertos
+    en forma voluntaria al valor del momento del pago. Los últimos ${semana} cubiertos deberán abonarse el lunes anterior al evento, junto con la entrega de la Lista definitiva de
+    Invitados. Los importes de los invitados faltantes no serán reintegrados. Niños menores de 4 años no abonan y de 4 a 10 abonan el valor de medio cubierto.</p>
+    <p><u>Impuestos y Cargos Extras</u>: Los impuestos de Sadaic y Aadi-Capif NO están incluidos, (A la fecha está suspendido su pago) si correspondiese abonarse los mismos deberán ser
+    cancelados también el lunes anterior al evento.</p>
+    <div class="ct-sec"><h3>Pagos en Moneda Extranjera</h3>
+    <p>Se establece como forma de pago preferentemente el Peso Argentino. En caso de que el cliente opte por abonar en Dólares Estadounidenses, los mismos serán tomados al valor
+    de Compra vigente al momento del pago, el cual resulta sensiblemente inferior al valor de mercado. Por tal motivo el Salón recomienda expresamente que el cliente realice el
+    cambio de moneda por su cuenta en una casa de cambio o entidad de su confianza, ya que efectuar el cambio a través del Salón implica una cotización menos conveniente.</p></div>
+    <div class="ct-sec"><h3>Cancelación del Evento</h3>
+    <p>En caso de cancelación del evento la reserva de ${sena} cubiertos no será reintegrada. Los pagos voluntarios adicionales a la reserva serán devueltos en un 50% en cuatro cuotas
+    mensuales consecutivas a partir de la fecha establecida para la realización del evento.</p></div>
+    <div class="ct-sec"><h3>Condiciones Generales del Salón</h3>
+    <p>NO se permite la participación de Organizadores de Eventos, la coordinación y organización del mismo estará bajo nuestra supervisión. Está prohibido ingresar
+    elementos que puedan dañar el salón, como Pelotas, Aerosoles, Papel picado, Maquillajes, etc. (consultar antes de comprar)</p></div>
+    <div class="ct-sec"><h3>Agregados al Evento</h3>
+    <p>Nuestro equipo está a su disposición para asesorarlos sobre la contratación de servicios adicionales. Para consultas y contrataciones comunicarse con
+    Juan al 11-34498917 o enviar un mail a anibalsevillaeventos@gmail.com</p>
+    <p>Todos los agregados (Shows, decoración, cabinas de fotos, Stand de Glitter, etc.) deberán ser contratados exclusivamente a través de Salón Dorado.
+    En casos excepcionales y únicamente con autorización previa el cliente podrá contratar proveedores externos, en dichos casos por cada servicio adicional contratado
+    externamente se abonará un canon equivalente a dos (2) cubiertos.</p>
+    <p>Esta condición aplica también a los servicios adicionales que sean obsequiados o regalados por terceros (familiares, amigos, conocidos, etc.), los cuales igualmente
+    deberán contar con la autorización y abonar el canon correspondiente. No está permitido el ingreso de ningún agregado externo sin dicha autorización.</p>
+    <p>No permitimos Bandas ni elementos de percusión. No facilitamos ni prestamos nuestros equipos (Micrófonos, parlantes, etc.).</p>
+    <p>En cuanto a los servicios de Foto y Video, si lo desean proporcionaremos una lista de proveedores recomendados para que puedan elegir y solicitar presupuestos en forma directa.
+    Dichos profesionales deberán proporcionar Nombre y Apellido, DNI y seguro de accidentes de trabajo de todas las personas que realicen tareas durante el evento.
+    Solo se servirá como cortesía a fotógrafos y camarógrafos cuando los mismos no excedan la cantidad de 4 personas, los excedentes a dicha cantidad se cobrarán.</p></div>
+    <div class="ct-sec ct-fin">
+      <p>Invitados estimados: ${v(d.invitados ? fmtN(num(d.invitados)) : '', 60)} &nbsp;&nbsp; Mínimo de Cubiertos ENTEROS a abonar: ${v(d.minimo ? fmtN(num(d.minimo)) : '', 60)}</p>
+      <p>Teléfono: ${v(d.tel, 180)}</p>
+      <div class="ct-firmas"><div><div class="ct-linea"></div>CONTRATANTE<div class="ct-acl">Aclaración: ${esc(d.recibiDe || '')}</div></div>
+        <div><div class="ct-linea"></div>POR SALÓN DORADO<div class="ct-acl">Aclaración: ${esc(d.resp || '')}</div></div></div>
+    </div>
+  </div>`;
+}
+VIEWS.contrato = id => {
+  const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
+  const d = contratoDatos(e);
+  const campo = ([k, l, t]) => t === 'concepto' ? F.sel(k, l, CT_CONCEPTOS.map(x => [x, x]), d[k])
+    : t === 'num' ? F.text(k, l, d[k], 'inputmode="numeric"') : t === 'text' ? F.text(k, l, d[k])
+    : `<label class="f"><span>${l}</span><input type="${t}" name="${k}" value="${esc(d[k] || '')}"></label>`;
+  return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
+    <button class="btn-primary" id="ctPrint">Imprimir / Guardar PDF</button></div>
+  <div class="panel no-print"><div class="panel-h"><h3>Datos que se completan en el contrato</h3><button class="btn-sm" id="ctAuto">Volver a completar con los datos de la app</button></div>
+    <p class="small muted" style="margin-top:0">Se completan solos con los datos del evento. Podés corregir cualquiera; si dejás uno vacío, sale la línea punteada para escribirlo a mano. Imprimí 2 copias: una para el cliente y otra para el salón.</p>
+    <form id="ctForm" class="fgrid" onsubmit="return false">${CT_CAMPOS.map(campo).join('')}</form>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn-gold" id="ctSave">Guardar datos</button><span class="small muted" id="ctMsg"></span></div>
+  </div>
+  <div class="panel no-print"><div class="panel-h"><h3>Copia firmada</h3></div>
+    <p class="small muted" style="margin-top:0">Escaneá el contrato firmado con el iPhone (Notas → cámara → Escanear documentos), guardalo en Google Drive o iCloud y pegá acá el link para compartir.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="ctLink" style="flex:1;min-width:240px" placeholder="https://drive.google.com/…" value="${esc(e.contratoLink || '')}"><button id="ctLinkSave">Guardar link</button>
+    ${linkOk(e.contratoLink) ? `<a class="btn" target="_blank" rel="noopener" href="${esc(e.contratoLink)}">Abrir</a>` : ''}</div>
+  </div>
+  <div id="ctDoc">${contratoDoc(e, d)}</div>`;
+};
+VIEWS.contrato.after = id => {
+  const e = ev(id); if (!e) return;
+  const form = $('#ctForm');
+  const leer = () => { const r = readForm(form), d = {}; CT_CAMPOS.forEach(([k]) => d[k] = String(r[k] ?? '').trim()); return d; };
+  const upd = () => { CT_DRAFT = { id, datos: leer() }; $('#ctDoc').innerHTML = contratoDoc(ev(id), CT_DRAFT.datos); $('#ctMsg').textContent = 'Cambios sin guardar'; };
+  form.addEventListener('input', upd); form.addEventListener('change', upd);
+  const guardar = () => {
+    const d = leer(), E = clean(ev(id)); E.contrato = d;
+    const em = ((DB.user || {}).email || '').toLowerCase();
+    const R = CONF().contratoResp || {};
+    if (em && (d.resp || d.respDni) && (!R[em] || R[em].nombre !== d.resp || R[em].dni !== d.respDni))
+      DB.save('config', { ...(S.config.general || clean(DEFAULT_CONFIG)), id: 'general', contratoResp: { ...R, [em]: { nombre: d.resp, dni: d.respDni } } });
+    CT_DRAFT = null; DB.save('eventos', E);
+  };
+  $('#ctSave').onclick = () => { guardar(); toast('Datos del contrato guardados.'); };
+  $('#ctPrint').onclick = () => { guardar(); setTimeout(() => window.print(), 300); };
+  $('#ctAuto').onclick = () => { CT_DRAFT = { id, datos: contratoAuto(ev(id)) }; render(); $('#ctMsg').textContent = 'Cambios sin guardar'; };
+  $('#ctLinkSave').onclick = () => {
+    const u = $('#ctLink').value.trim();
+    if (u && !linkOk(u)) { toast('El link tiene que empezar con https://'); return; }
+    const E = clean(ev(id)); E.contratoLink = u; DB.save('eventos', E); toast(u ? 'Link del contrato guardado.' : 'Link borrado.');
+  };
+  if (CT_DRAFT && CT_DRAFT.id === id) $('#ctMsg').textContent = 'Cambios sin guardar';
 };
 
 /* ---------- hoja de servicio para cocina y organizadora (sin precios) ---------- */
