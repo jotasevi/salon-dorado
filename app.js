@@ -1641,7 +1641,8 @@ VIEWS.contrato.after = id => {
     CT_DRAFT = null; DB.save('eventos', E);
   };
   $('#ctSave').onclick = () => { guardar(); toast('Datos del contrato guardados.'); };
-  $('#ctPrint').onclick = () => { guardar(); setTimeout(() => window.print(), 300); };
+  // imprime en el mismo clic (Safari y la app instalada bloquean la impresión si se demora)
+  $('#ctPrint').onclick = () => { try { guardar(); } catch (err) { console.error(err); } window.print(); };
   $('#ctAuto').onclick = () => { CT_DRAFT = { id, datos: contratoAuto(ev(id)) }; render(); $('#ctMsg').textContent = 'Cambios sin guardar'; };
   $('#ctLinkSave').onclick = () => {
     const u = $('#ctLink').value.trim();
