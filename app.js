@@ -30,8 +30,36 @@ const fmtYMc = s => s ? MESES[+s.slice(5, 7) - 1].slice(0, 3) + ' ' + s.slice(2,
 const dow = s => parseD(s).getDay();
 const fmtDL = s => s ? `${DIAS[dow(s)]} ${fmtD(s)}` : '';
 const sum = (arr, f = x => x) => arr.reduce((a, x) => a + (num(f(x)) || 0), 0);
-// feriados nacionales de fecha fija (los trasladables se pueden agregar en Configuración)
-const FERIADOS_FIJOS = ['01-01', '03-24', '04-02', '05-01', '05-25', '06-20', '07-09', '12-08', '12-25'];
+/* ---------- feriados de Argentina (Ley 27.399), calculados para cualquier año ---------- */
+const FERIADOS_INAMOVIBLES = [['01-01', 'Año Nuevo'], ['03-24', 'Día de la Memoria'], ['04-02', 'Malvinas'], ['05-01', 'Día del Trabajador'], ['05-25', 'Revolución de Mayo'],
+  ['06-20', 'Día de la Bandera'], ['07-09', 'Día de la Independencia'], ['12-08', 'Inmaculada Concepción'], ['12-25', 'Navidad']];
+// trasladables: si caen martes o miércoles pasan al lunes anterior; jueves o viernes, al lunes siguiente
+const FERIADOS_TRASLADABLES = [['06-17', 'Paso a la Inmortalidad de Güemes'], ['08-17', 'Paso a la Inmortalidad de San Martín'], ['10-12', 'Día de la Diversidad Cultural'], ['11-20', 'Día de la Soberanía Nacional']];
+// días no laborables con fines turísticos (puentes): los fija el Gobierno cada año por decreto
+const FERIADOS_PUENTE = {
+  2025: ['2025-05-02', '2025-08-15', '2025-11-21'],
+  2026: ['2026-03-23', '2026-07-10', '2026-12-07'],
+};
+function pascua(y) { // algoritmo de Meeus/Jones/Butcher
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${y}-${pad(mes)}-${pad(dia)}`;
+}
+// feriados calculados automáticamente (sin los cambios hechos a mano): { 'AAAA-MM-DD': 'Nombre' }
+function feriadosAuto(y) {
+  const r = {}, add = (f, n) => { r[f] = r[f] ? r[f] + ' y ' + n : n; };
+  FERIADOS_INAMOVIBLES.forEach(([md, n]) => add(`${y}-${md}`, n));
+  const pa = pascua(y);
+  add(addDays(pa, -48), 'Carnaval'); add(addDays(pa, -47), 'Carnaval');
+  add(addDays(pa, -3), 'Jueves Santo (no laborable)'); add(addDays(pa, -2), 'Viernes Santo');
+  FERIADOS_TRASLADABLES.forEach(([md, n]) => {
+    const f = `${y}-${md}`, d = dow(f), mov = { 2: -1, 3: -2, 4: 4, 5: 3 }[d] || 0;
+    add(addDays(f, mov), n + (mov ? ` (trasladado del ${fmtD(f).slice(0, 5)})` : ''));
+  });
+  (FERIADOS_PUENTE[y] || []).forEach(f => add(f, 'Puente turístico'));
+  return r;
+}
 
 /* teléfono: guarda solo dígitos con código país (ej. 5491155554444) */
 function normTel(v) {
@@ -76,6 +104,9 @@ const DEFAULT_CONFIG = {
   validezPendiente: 10,
   iva: { activoPorDefecto: false, pct: 21 },
   feriadosExtra: [],
+  feriadosQuitados: [],
+  feriadosNombres: {},
+  aniosExtra: [],
 };
 const LISTA_LABELS = {
   tipos: 'Tipos de evento', menus: 'Menús', principalAdultos: 'Plato principal adultos', guarnicionAdultos: 'Guarnición adultos',
@@ -216,7 +247,18 @@ const nombreCli = c => [c.nombre, c.apellido].filter(Boolean).join(' ') || '(sin
 const tipoEv = e => e.tipo === 'Otro' ? (e.tipoOtro || 'Otro') : (e.tipo || '');
 const tituloEv = e => `${tipoEv(e)}${e.homenajeado ? ' · ' + e.homenajeado : ''}`;
 const minimoPorFecha = f => { const c = CONF(); const d = f ? dow(f) : -1; return d === 6 ? num(c.minimos[5]) : d === 5 ? num(c.minimos[4]) : num(c.minimos.otro); };
-const esFeriado = f => FERIADOS_FIJOS.includes(f.slice(5)) || (CONF().feriadosExtra || []).includes(f);
+// feriados del año con los cambios de Configuración (agregados y quitados a mano)
+function feriadosAnio(y) {
+  const c = CONF(), key = y + '|' + JSON.stringify([c.feriadosExtra, c.feriadosQuitados, c.feriadosNombres]);
+  if (feriadosAnio.cache[key]) return feriadosAnio.cache[key];
+  const r = feriadosAuto(+y);
+  (c.feriadosQuitados || []).forEach(f => delete r[f]);
+  (c.feriadosExtra || []).filter(f => f.startsWith(y + '-')).forEach(f => r[f] = (c.feriadosNombres || {})[f] || r[f] || 'Feriado agregado');
+  return feriadosAnio.cache[key] = r;
+}
+feriadosAnio.cache = {};
+const nombreFeriado = f => feriadosAnio(f.slice(0, 4))[f] || '';
+const esFeriado = f => !!nombreFeriado(f);
 function estadoVisual(e) {
   if (e.estado === 'pendiente' && e.vencePendiente && e.vencePendiente < todayISO()) return 'vencido';
   return e.estado;
@@ -550,11 +592,11 @@ VIEWS.calendario = (anio) => {
   const y0 = new Date().getFullYear();
   const y = +(anio || y0);
   const yearsData = [...new Set(Object.values(S.eventos).map(e => +e.fecha.slice(0, 4)))].filter(v => v < y0);
-  const years = [...new Set([...yearsData, y0, y0 + 1, y0 + 2, y])].sort();
+  const years = [...new Set([...yearsData, ...aniosCalendario(), y])].sort();
   const hoy = todayISO();
   const porFecha = {};
   eventosActivos().forEach(e => porFecha[e.fecha] = e);
-  let html = `<div class="top"><h1>Calendario ${y}</h1><div class="actions"><div class="year-tabs">${years.map(v => `<a href="#/calendario/${v}" class="${v === y ? 'on' : ''}">${v}</a>`).join('')}</div></div></div>
+  let html = `<div class="top"><h1>Calendario ${y}</h1><div class="actions"><div class="year-tabs">${years.map(v => `<a href="#/calendario/${v}" class="${v === y ? 'on' : ''}">${v}</a>`).join('')}</div><button id="addAnio" title="Agrega el año siguiente con sus feriados">+ Agregar año</button></div></div>
   <div class="panel"><div class="panel-h"><div class="legend"><span><i style="background:var(--rojo)"></i>Reservado</span><span><i style="background:var(--amarillo)"></i>Pendiente de reserva</span><span><i style="background:var(--verde-soft);border:1px solid #9fcca5"></i>Disponible (vie, sáb, dom y feriados)</span><span><i style="background:var(--gris)"></i>Lunes a jueves</span><span><i style="background:#7d4f25;border-radius:50%;width:7px;height:7px"></i>Feriado</span></div>
   <div class="small muted">${countAnio(y)}</div></div><div class="cal">`;
   for (let m = 0; m < 12; m++) {
@@ -566,17 +608,60 @@ VIEWS.calendario = (anio) => {
       const f = `${y}-${pad(m + 1)}-${pad(d)}`, wd = dow(f), e = porFecha[f];
       const fer = esFeriado(f);
       let cls = (wd === 5 || wd === 6 || wd === 0 || fer) ? 'free' : 'wk';
-      let tip = fmtDL(f) + (fer ? ' (feriado)' : '');
+      let tip = fmtDL(f) + (fer ? ' · ' + nombreFeriado(f) : '');
       if (e) { cls = e.estado === 'reservado' ? 'res' : 'pen' + (estadoVisual(e) === 'vencido' ? ' venc' : ''); tip += ' · ' + nombreCli(cli(e.clienteId)) + ' · ' + tipoEv(e); }
       if (fer) cls += ' hol'; if (f === hoy) cls += ' today'; if (f < hoy) cls += ' pastday';
       html += `<div class="day ${cls}" title="${esc(tip)}" data-day="${f}">${d}</div>`;
     }
     html += '</div></div>';
   }
-  return html + '</div></div><p class="small muted">Tocá un día libre para cargar un evento, o un día ocupado para ver la ficha y el estado de cuenta.</p>';
+  const fers = Object.entries(feriadosAnio(y)).sort((a, b) => a[0].localeCompare(b[0]));
+  const cargoAMano = (CONF().feriadosExtra || []).some(f => f.startsWith(y + '-'));
+  const avisoPuente = FERIADOS_PUENTE[y] || cargoAMano ? '' : `<p class="small" style="color:var(--rojo)">Los puentes turísticos de ${y} todavía no están cargados. Cuando el Gobierno los anuncie, agregalos con <b>Editar feriados</b>.</p>`;
+  return html + `</div></div><p class="small muted">Tocá un día libre para cargar un evento, o un día ocupado para ver la ficha y el estado de cuenta.</p>
+  <div class="panel"><div class="panel-h"><h2>Feriados ${y}</h2><button id="edFerAnio">Editar feriados</button></div>${avisoPuente}
+  <table><tbody>${fers.map(([f, n]) => `<tr><td style="white-space:nowrap">${fmtDL(f)}</td><td>${esc(n)}</td></tr>`).join('')}</tbody></table></div>`;
 };
+// años que se muestran en el calendario: el actual, los dos siguientes y los que se agregaron a mano
+function aniosCalendario() {
+  const y0 = new Date().getFullYear();
+  return [...new Set([y0, y0 + 1, y0 + 2, ...(CONF().aniosExtra || []).map(Number)])].sort();
+}
+function formFeriadosAnio(y) {
+  const c = CONF(), auto = feriadosAuto(y), quit = c.feriadosQuitados || [], nombres = c.feriadosNombres || {};
+  const autoF = Object.keys(auto).sort();
+  const extras = (c.feriadosExtra || []).filter(f => f.startsWith(y + '-') && !auto[f]).sort();
+  modal({
+    title: 'Feriados ' + y, wide: true,
+    body: F.hint('Destildá un feriado si el Gobierno lo cambió. Abajo agregá los que falten (puentes turísticos, feriados nuevos o trasladados por decreto).') +
+      autoF.map(f => F.chk('a_' + f, `${fmtDL(f)} · ${esc(auto[f])}`, !quit.includes(f), 'full')).join('') +
+      F.area('extra', 'Feriados agregados a mano · uno por renglón: DD/MM/AAAA y el nombre (opcional)', extras.map(f => fmtD(f) + (nombres[f] ? ' ' + nombres[f] : '')).join('\n'), 'placeholder="15/08/' + y + ' Puente turístico" style="min-height:120px"'),
+    onSubmit: d => {
+      const nuevos = [], nuevosNom = {};
+      for (const linea of d.extra.split(/\n+/).map(s => s.trim()).filter(Boolean)) {
+        const m = linea.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s*(.*)$/);
+        if (!m) { toast('No entendí la fecha "' + linea + '". Usá DD/MM/AAAA.'); return false; }
+        const f = `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+        if (!m[3].startsWith(String(y))) { toast('La fecha ' + fmtD(f) + ' no es de ' + y + '.'); return false; }
+        nuevos.push(f); if (m[4]) nuevosNom[f] = m[4];
+      }
+      const otrosExtra = (c.feriadosExtra || []).filter(f => !f.startsWith(y + '-') || auto[f]);
+      const otrosNom = Object.fromEntries(Object.entries(nombres).filter(([f]) => !f.startsWith(y + '-')));
+      const quitados = [...quit.filter(f => !f.startsWith(y + '-')), ...autoF.filter(f => !d['a_' + f])];
+      DB.save('config', { ...(S.config.general || clean(DEFAULT_CONFIG)), id: 'general', feriadosExtra: [...otrosExtra, ...nuevos], feriadosNombres: { ...otrosNom, ...nuevosNom }, feriadosQuitados: quitados });
+      toast('Feriados de ' + y + ' guardados');
+    },
+  });
+}
 function countAnio(y) { const a = eventosActivos().filter(e => e.fecha.startsWith(y)); return `${a.filter(e => e.estado === 'reservado').length} reservados · ${a.filter(e => e.estado === 'pendiente').length} pendientes`; }
-VIEWS.calendario.after = () => {
+VIEWS.calendario.after = (anio) => {
+  const y = +(anio || new Date().getFullYear());
+  $('#addAnio').onclick = () => {
+    const nuevo = Math.max(...aniosCalendario(), y) + 1, g = S.config.general || clean(DEFAULT_CONFIG);
+    DB.save('config', { ...g, id: 'general', aniosExtra: [...new Set([...(g.aniosExtra || []), nuevo])] }, true);
+    toast('Se agregó ' + nuevo + ' con sus feriados'); go('calendario/' + nuevo);
+  };
+  $('#edFerAnio').onclick = () => formFeriadosAnio(y);
   $$('[data-day]').forEach(d => d.onclick = () => { const e = eventoEnFecha(d.dataset.day); if (e) go('evento/' + e.id); else formEvento(null, { fecha: d.dataset.day }); });
 };
 
@@ -584,7 +669,7 @@ VIEWS.calendario.after = () => {
 let FILTRO_EV = { anio: 'proximos', estado: '', q: '' };
 VIEWS.eventos = () => {
   const y0 = new Date().getFullYear();
-  const years = [...new Set([...Object.values(S.eventos).map(e => e.fecha.slice(0, 4)), String(y0), String(y0 + 1), String(y0 + 2)])].sort().reverse();
+  const years = [...new Set([...Object.values(S.eventos).map(e => e.fecha.slice(0, 4)), ...aniosCalendario().map(String)])].sort().reverse();
   return `<div class="top"><h1>Eventos</h1><div class="actions"><button id="xls">Descargar base en Excel</button><button class="btn-primary" id="nuevoEv">+ Nuevo evento</button></div></div>
   <div class="panel"><div class="filters">
     <select id="fAnio"><option value="proximos">Próximos</option><option value="todos">Todos</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
@@ -1130,7 +1215,7 @@ VIEWS.config = () => {
       <dt>Validez pendiente</dt><dd>${c.validezPendiente} días</dd><dt>IVA</dt><dd>${c.iva.pct}% · ${c.iva.activoPorDefecto ? 'activado por defecto' : 'desactivado por defecto'}</dd></dl>
       <p class="small muted">Aplican a los eventos nuevos. Cada evento se puede cambiar en sus Condiciones.</p></div>
     <div class="panel"><div class="panel-h"><h2>Feriados extra</h2><button id="edFer">Editar</button></div>
-      <p class="small muted" style="margin-top:0">Ya se marcan los feriados de fecha fija. Agregá los trasladables y puentes de cada año.</p>
+      <p class="small muted" style="margin-top:0">Los feriados nacionales (fijos, trasladables, Carnaval y Semana Santa) se calculan solos para cada año. Los puentes turísticos se cargan desde el <b>Calendario → Editar feriados</b> cuando el Gobierno los anuncia. Acá podés agregar fechas sueltas.</p>
       <p class="small">${(c.feriadosExtra || []).sort().map(fmtD).join(', ') || '—'}</p></div>
   </div>
   <div class="panel"><div class="panel-h"><h2>Listas de opciones</h2></div><div class="grid3">
