@@ -486,6 +486,33 @@ const go = h => { location.hash = '#/' + h; };
 function route() { const h = decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'inicio'; const [view, ...args] = h.split('/'); return { view, args }; }
 
 const VIEWS = {};
+/* ---------- tema claro / oscuro (se recuerda en cada dispositivo) ---------- */
+const TEMA_KEY = 'salonDorado.tema';
+function temaGuardado() { try { return localStorage.getItem(TEMA_KEY); } catch (e) { return null; } }
+function temaActual() { return temaGuardado() || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
+function aplicarTema() {
+  const t = temaActual();
+  document.documentElement.dataset.theme = t;
+  const mc = document.querySelector('meta[name=theme-color]'); if (mc) mc.content = t === 'dark' ? '#1b1a18' : '#2b2a28';
+  const b = document.getElementById('tema'); if (b) b.textContent = t === 'dark' ? '☀️ Modo claro' : '🌙 Modo oscuro';
+}
+function cambiarTema() {
+  try { localStorage.setItem(TEMA_KEY, temaActual() === 'dark' ? 'light' : 'dark'); } catch (e) { }
+  aplicarTema();
+}
+aplicarTema();
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!temaGuardado()) aplicarTema(); });
+
+/* ---------- nombre para el saludo de Inicio ---------- */
+function nombreUsuario() {
+  const u = DB.user || {}, em = (u.email || '').toLowerCase();
+  const nombres = CONF().nombres || {};
+  if (nombres[em]) return nombres[em];
+  if (em.startsWith('anibal')) return 'Anibal';
+  if (em.startsWith('juan')) return 'Juan';
+  return u.displayName || '';
+}
+
 function render() {
   if (MODAL_OPEN) { PENDING_RENDER = true; return; }
   PENDING_RENDER = false;
@@ -494,10 +521,13 @@ function render() {
   if (!SHELL) {
     root.innerHTML = `<div class="app"><nav class="side"><img src="${LOGO}" alt="Salón Dorado">
       ${NAV.map(([k, t]) => `<a href="#/${k}" data-nav="${k}">${t}</a>`).join('')}
+      <a href="#" id="tema" class="tema-btn"></a>
       <div class="user">${DB.mode === 'demo' ? 'Modo demostración' : esc(DB.user.email) + ' · <a href="#" id="logout" style="display:inline;padding:0">Salir</a>'}</div></nav>
       <main id="main"></main></div>`;
     SHELL = true;
     const lo = $('#logout'); if (lo) lo.onclick = e => { e.preventDefault(); DB.logout(); };
+    $('#tema').onclick = e => { e.preventDefault(); cambiarTema(); };
+    aplicarTema();
   }
   const { view, args } = route();
   const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos' }[view] || view;
@@ -556,7 +586,8 @@ VIEWS.inicio = () => {
   const sinProv = act.filter(e => e.estado === 'reservado' && e.fecha >= hoy && e.fecha <= addDays(hoy, 30)).flatMap(e => calcExtras(e).lines.filter(l => !l.contratado).map(l => ({ e, l })));
   const anioRes = act.filter(e => e.estado === 'reservado' && e.fecha.startsWith(hoy.slice(0, 4))).length;
   const sigRes = act.filter(e => e.estado === 'reservado' && e.fecha.startsWith(String(+hoy.slice(0, 4) + 1))).length;
-  return `<div class="top"><h1>Hola${DB.user && DB.user.displayName ? ', ' + esc(DB.user.displayName) : ''}</h1>
+  const quien = nombreUsuario();
+  return `<div class="top"><h1>${quien ? `¡Hola ${esc(quien)}!` : '¡Hola!'}</h1>
     <div class="actions"><button class="btn-primary" id="nuevoEv">+ Nuevo evento</button></div></div>
   ${faltaIpc ? `<div class="alert warn">Falta cargar el IPC de <b>${fmtYM(ipcAnt)}</b>. Sin ese dato los ajustes de este mes quedan pendientes. <a href="#/ipc">Cargar IPC</a></div>` : ''}
   <div class="cards">

@@ -162,3 +162,55 @@ main,.grid2>*,.grid3>*,.panel{min-width:0}
 .esp-row span{font-size:.92rem}
 .esp-row input{width:100%;min-width:0}
 @media (max-width:560px){.esp-row{grid-template-columns:1fr 64px}.esp-row input[name^="espd_"]{grid-column:1/-1}}
+
+/* ====== modo oscuro (solo en pantalla: la impresión sale siempre en blanco) ====== */
+.tema-btn{display:block;padding:.55em .8em;border-radius:8px;text-decoration:none;color:var(--ink);cursor:pointer}
+@media screen{
+  html[data-theme="dark"]{color-scheme:dark;
+    --bg:#1b1a18; --panel:#252321; --ink:#ece6dc; --muted:#a59d91; --line:#3a3632;
+    --gold:#d3a273; --gold-2:#b98a5f; --gold-soft:#3b2f24;
+    --rojo:#d9645c; --amarillo:#d9ae35; --verde:#5fb36a; --verde-soft:#24402a; --gris:#2e2b28;
+    --shadow:0 1px 3px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.25);
+  }
+  html[data-theme="dark"] a{color:#e0b07f}
+  html[data-theme="dark"] button,html[data-theme="dark"] .btn,
+  html[data-theme="dark"] input,html[data-theme="dark"] select,html[data-theme="dark"] textarea,
+  html[data-theme="dark"] .side,html[data-theme="dark"] .month,html[data-theme="dark"] .year-tabs a,
+  html[data-theme="dark"] .login .box,html[data-theme="dark"] dialog{background:var(--panel);color:var(--ink)}
+  html[data-theme="dark"] .btn-primary,html[data-theme="dark"] .year-tabs a.on{background:var(--gold);border-color:var(--gold);color:#1b1a18}
+  html[data-theme="dark"] .btn-primary:hover{background:#e3b48c}
+  html[data-theme="dark"] .btn-gold{background:var(--gold);border-color:var(--gold);color:#1b1a18}
+  html[data-theme="dark"] .btn-danger{color:var(--rojo);border-color:#5a2f2c}
+  html[data-theme="dark"] .btn-wa{background:#1f9e50;border-color:#1f9e50;color:#fff}
+  html[data-theme="dark"] .side a.on{color:#f0c79c}
+  html[data-theme="dark"] .side img,html[data-theme="dark"] .login img{filter:invert(1) hue-rotate(180deg);mix-blend-mode:screen}
+  html[data-theme="dark"] .card,html[data-theme="dark"] th,html[data-theme="dark"] tfoot td{background:#2c2926}
+  html[data-theme="dark"] tr.click:hover td{background:#302c28}
+  html[data-theme="dark"] tr.cur td{background:#3a3024}
+  html[data-theme="dark"] tr.past td{color:#857e74}
+  html[data-theme="dark"] .card.warn,html[data-theme="dark"] .alert.warn{background:#3a3020;border-color:#5e4c25}
+  html[data-theme="dark"] .card.bad,html[data-theme="dark"] .alert.bad{background:#3d2523;border-color:#62342f}
+  html[data-theme="dark"] .card.good{background:#223324;border-color:#35553a}
+  html[data-theme="dark"] .alert.info{background:#222c38;border-color:#344558}
+  html[data-theme="dark"] .demo-banner{background:#3a3020;border-color:#5e4c25;color:#ecd894}
+  html[data-theme="dark"] .b-reservado,html[data-theme="dark"] .b-bad{background:#4a2622;color:#f2a49c}
+  html[data-theme="dark"] .b-pendiente,html[data-theme="dark"] .b-warn{background:#47391a;color:#ecc867}
+  html[data-theme="dark"] .b-cancelado{background:#363330;color:#a59d91}
+  html[data-theme="dark"] .b-ok{background:#24402a;color:#8fd49a}
+  html[data-theme="dark"] .day.wk{color:#7c756c}
+  html[data-theme="dark"] .day.free{color:#9fdcaa}
+  html[data-theme="dark"] .day.pen{color:#2b2205}
+  html[data-theme="dark"] .day.hol::after{background:#f0c79c}
+  html[data-theme="dark"] .day.today{border-color:var(--ink)}
+  html[data-theme="dark"] .toast{background:var(--gold);color:#1b1a18}
+  html[data-theme="dark"] dialog::backdrop{background:rgba(0,0,0,.6)}
+  html[data-theme="dark"] ::placeholder{color:#6f685f}
+  html[data-theme="dark"] .print-doc{border-color:#3a3632}
+}
+@media screen{
+  /* la hoja de impresión se ve siempre como papel blanco */
+  html[data-theme="dark"] .print-doc{--line:#e6dfd4;--ink:#2b2a28;--muted:#7a746b;--gold-2:#e3b48c;color:#222}
+  html[data-theme="dark"] .print-doc th{background:#f7f3ee;color:#555}
+  html[data-theme="dark"] .print-doc tfoot td{background:#fbf9f6}
+  html[data-theme="dark"] .print-doc a{color:#9a6a3c}
+}
