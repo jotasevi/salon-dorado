@@ -98,7 +98,7 @@ const DEFAULT_CONFIG = {
     religiones: ['Católica', 'Judía', 'Evangélica', 'Otra'],
     egresos: ['Alquiler mensual', 'Electricidad', 'ABL', 'Gas', 'Empleados', 'Carnicería', 'Mayorista', 'Pescadería', 'Verdulería', 'Caja chica', 'Arreglos y mantenimiento', 'Remodelaciones', 'Quesos', 'Hielo', 'Congelados', 'Comisiones Juan', 'Pauta', 'Contenido', 'Otros'],
   },
-  minimos: { 5: 120 /*sáb*/, 4: 100 /*vie*/, otro: 100 },
+  minimos: { 5: 120 /*sáb*/, 4: 100 /*vie*/, dom: 120, otro: 100 },
   sena: 20,
   reservaSemana: 30,
   mesesCongelado: 1,
@@ -263,7 +263,7 @@ const eventoEnFecha = f => eventosActivos().find(e => e.fecha === f);
 const nombreCli = c => [c.nombre, c.apellido].filter(Boolean).join(' ') || '(sin nombre)';
 const tipoEv = e => e.tipo === 'Otro' ? (e.tipoOtro || 'Otro') : (e.tipo || '');
 const tituloEv = e => `${tipoEv(e)}${e.homenajeado ? ' · ' + e.homenajeado : ''}`;
-const minimoPorFecha = f => { const c = CONF(); const d = f ? dow(f) : -1; return d === 6 ? num(c.minimos[5]) : d === 5 ? num(c.minimos[4]) : num(c.minimos.otro); };
+const minimoPorFecha = f => { const c = CONF(); const d = f ? dow(f) : -1; return d === 6 ? num(c.minimos[5]) : d === 5 ? num(c.minimos[4]) : d === 0 ? num(c.minimos.dom) : num(c.minimos.otro); };
 // feriados del año con los cambios de Configuración (agregados y quitados a mano)
 function feriadosAnio(y) {
   const c = CONF(), key = y + '|' + JSON.stringify([c.feriadosExtra, c.feriadosQuitados, c.feriadosNombres]);
@@ -319,7 +319,7 @@ function calcCuenta(e, hoy = todayISO()) {
   const desde = c.mesBase || ym(e.fecha);
   const hasta = ym(e.fecha) < desde ? desde : ym(e.fecha);
   const congel = num(c.mesesCongelado);
-  const meses = []; let valor = base, m = desde, i = 0;
+  const meses = []; let valor = base, real = base, m = desde, i = 0;
   while (m <= hasta && i < 120) {
     const aj = c.ajustes[m] || {};
     let aplica = false, p = null, pend = false, manual = false;
@@ -328,15 +328,22 @@ function calcCuenta(e, hoy = todayISO()) {
       if (aplica) {
         if (aj.pct !== undefined && aj.pct !== null && aj.pct !== '') { p = num(aj.pct); manual = true; }
         else { const r = S.ipc[addMonths(m, -1)]; p = r && r.valor !== null && r.valor !== undefined && r.valor !== '' ? num(r.valor) : null; }
-        if (p === null) pend = true; else valor = Math.round(valor * (1 + p / 100));
+        if (p === null) pend = true; else { valor = Math.round(valor * (1 + p / 100)); real = Math.round(real * (1 + p / 100)); }
       }
     }
-    meses.push({ mes: m, i, aplica, pct: p, pend, manual, valor, ipcDe: addMonths(m, -1) });
+    // precio especial ("atención"): desde este mes el cubierto queda en ese valor y los ajustes siguientes parten de ahí.
+    // "real" sigue el cálculo sin la atención, solo para verlo internamente.
+    const especial = num(aj.valorFijo) > 0;
+    if (especial) valor = num(aj.valorFijo);
+    meses.push({ mes: m, i, aplica, pct: p, pend, manual, valor, real, especial, motivo: especial ? aj.motivo || '' : '', ipcDe: addMonths(m, -1) });
     m = addMonths(m, 1); i++;
   }
-  const valorEnMes = mes => { if (!meses.length) return base; if (mes <= meses[0].mes) return meses[0].valor; const r = meses.find(x => x.mes === mes); return r ? r.valor : meses[meses.length - 1].valor; };
+  const filaMes = mes => !meses.length ? null : mes <= meses[0].mes ? meses[0] : meses.find(x => x.mes === mes) || meses[meses.length - 1];
+  const valorEnMes = mes => { const r = filaMes(mes); return r ? r.valor : base; };
   const mesHoy = ym(hoy);
   const valorHoy = valorEnMes(mesHoy);
+  const conAtencion = meses.some(x => x.especial);
+  const valorRealHoy = (filaMes(mesHoy) || { real: base }).real;
   const ipcPendienteHoy = !!(meses.find(x => x.mes === mesHoy) || {}).pend;
 
   // pagos de cubiertos
@@ -391,7 +398,7 @@ function calcCuenta(e, hoy = todayISO()) {
   meses.forEach(r => { const pm = porMes[r.mes] || { monto: 0, cubiertos: 0, iva: 0 }; r.pagado = pm.monto; r.cubPagados = pm.cubiertos; ac += pm.cubiertos; r.acum = ac; r.pendientes = Math.round((facturar - ac) * 10) / 10; });
 
   return {
-    c, base, desde, hasta, meses, valorHoy, valorEnMes, ipcPendienteHoy, pagos: pagosCalc,
+    c, base, desde, hasta, meses, valorHoy, valorEnMes, ipcPendienteHoy, conAtencion, valorRealHoy, pagos: pagosCalc,
     pagados: acum, credito, facturar, equivFinal, pendientes, montoPendiente, aFavor, cubAFavor,
     reservaSemana, antesSemana, montoCub, ivaOn, ivaPct, ivaTotal, montoIva, ivaPendiente,
     sinValor: !base,
@@ -652,6 +659,7 @@ VIEWS.inicio = () => {
     <div class="panel"><div class="panel-h"><h2>Pendientes de reserva</h2></div>
       ${pend.length ? `<ul class="list-clean">${pend.map(e => { const v = e.vencePendiente; const venc = v && v < hoy; return `<li data-go="evento/${e.id}" style="cursor:pointer"><div><b>${fmtD(e.fecha)}</b> · ${esc(nombreCli(cli(e.clienteId)))}<div class="small muted">${esc(tipoEv(e))}</div></div><div class="small ${venc ? '' : 'muted'}">${v ? (venc ? `<span class="badge b-bad">Venció ${fmtD(v)}</span>` : `Vence ${fmtD(v)}`) : ''}</div></li>`; }).join('')}</ul>` : '<p class="muted">Nada pendiente.</p>'}
     </div>
+    ${panelRecordatorios() || '<div class="panel"><div class="panel-h"><h2>Para contactar</h2></div><p class="muted">No hay recordatorios pendientes.</p></div>'}
     <div class="panel"><div class="panel-h"><h2>Primer aniversario</h2></div>
       <p class="small muted" style="margin-top:-6px">Familias que cumplen un año de su fiesta: un buen momento para saludarlas.</p>
       ${aniv.length ? `<ul class="list-clean">${aniv.map(({ e, a }) => { const c = cli(e.clienteId); const txt = `¡Hola ${c.nombre || ''}! Hoy se cumple un año de ${e.homenajeado ? 'la fiesta de ' + e.homenajeado : 'su fiesta'} en Salón Dorado. ¡Qué lindo fue compartirla con ustedes! Les mandamos un abrazo grande.`; return `<li><div><b>${fmtD(a)}</b> · ${esc(tituloEv(e))}<div class="small muted">${esc(nombreCli(c))}</div></div><div class="actions" style="display:flex;gap:6px">${c.celular ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(c.celular, txt)}">WhatsApp</a>` : ''}<button class="btn-sm" data-saludado="${e.id}">Listo</button></div></li>`; }).join('')}</ul>` : '<p class="muted">No hay aniversarios en las próximas 3 semanas.</p>'}
@@ -664,6 +672,7 @@ VIEWS.inicio = () => {
 };
 VIEWS.inicio.after = () => {
   $('#nuevoEv').onclick = () => formEvento();
+  bindRecordatorios();
   $$('[data-saludado]').forEach(b => b.onclick = () => { const e = ev(b.dataset.saludado); DB.save('eventos', { ...e, aniversarioSaludado: true }); toast('Marcado como saludado'); });
 };
 
@@ -846,27 +855,121 @@ function formEvento(id, pre = {}) {
   });
 }
 
+/* ---------- RECORDATORIOS ----------
+  - Automático: 3 meses (90 días) antes de cada evento reservado, "ofrecer adicionales". Se marca con e.adicionalesOk.
+  - Manuales: en cada cliente, c.recordatorios = [{ id, fecha, motivo, hecho }]. Aparecen desde 7 días antes.
+*/
+const DIAS_ADICIONALES = 90;
+function recordatoriosPend(hoy = todayISO(), soloCliente = null) {
+  const r = [];
+  eventosActivos().filter(e => e.estado === 'reservado' && !e.adicionalesOk && e.fecha >= hoy && daysBetween(hoy, e.fecha) <= DIAS_ADICIONALES && (!soloCliente || e.clienteId === soloCliente))
+    .forEach(e => r.push({ tipo: 'adic', fecha: addDays(e.fecha, -DIAS_ADICIONALES), e, c: cli(e.clienteId) }));
+  Object.values(S.clientes).filter(c => !soloCliente || c.id === soloCliente).forEach(c => (c.recordatorios || []).filter(x => !x.hecho && (soloCliente || x.fecha <= addDays(hoy, 7)))
+    .forEach(x => r.push({ tipo: 'manual', fecha: x.fecha, x, c })));
+  return r.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+}
+function itemRecordatorio(r, hoy) {
+  const c = r.c || {}, venc = r.fecha < hoy;
+  if (r.tipo === 'adic') {
+    const e = r.e, dias = daysBetween(hoy, e.fecha);
+    const txt = `¡Hola ${c.nombre || ''}! ¿Cómo están? Faltan unos meses para ${e.homenajeado ? 'la fiesta de ' + e.homenajeado : 'su fiesta'} en Salón Dorado y queríamos contarles los adicionales que pueden sumar para ese día. ¿Les mandamos la lista?`;
+    return `<li><div><b>Ofrecer adicionales</b> · ${esc(tituloEv(e))}<div class="small muted"><a href="#/cliente/${c.id}">${esc(nombreCli(c))}</a> · evento ${fmtD(e.fecha)} · faltan ${dias} días</div></div>
+      <div class="actions" style="display:flex;gap:6px">${c.celular ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(c.celular, txt)}">WhatsApp</a>` : ''}<button class="btn-sm" data-go="evento/${e.id}">Ver evento</button><button class="btn-sm" data-adicok="${e.id}">Listo</button></div></li>`;
+  }
+  return `<li><div><b>${fmtD(r.fecha)}</b>${venc ? ' <span class="badge b-bad">atrasado</span>' : r.fecha === hoy ? ' <span class="badge b-warn">hoy</span>' : ''} · ${esc(r.x.motivo || 'Contactar')}<div class="small muted"><a href="#/cliente/${c.id}">${esc(nombreCli(c))}</a></div></div>
+    <div class="actions" style="display:flex;gap:6px">${c.celular ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(c.celular)}">WhatsApp</a>` : ''}<button class="btn-sm" data-recedit="${c.id}|${r.x.id}">Editar</button><button class="btn-sm" data-recok="${c.id}|${r.x.id}">Listo</button></div></li>`;
+}
+function panelRecordatorios(soloCliente = null) {
+  const hoy = todayISO(), list = recordatoriosPend(hoy, soloCliente);
+  if (!soloCliente && !list.length) return '';
+  return `<div class="panel"><div class="panel-h"><h2>Para contactar</h2>${soloCliente ? `<button class="btn-sm" data-recnuevo="${soloCliente}">+ Recordatorio</button>` : ''}</div>
+    <p class="small muted" style="margin-top:-6px">${soloCliente ? 'Recordatorios de este cliente.' : 'Recordatorios de esta semana y eventos que están a 3 meses o menos (para ofrecerles adicionales).'}</p>
+    ${list.length ? `<ul class="list-clean">${list.map(r => itemRecordatorio(r, hoy)).join('')}</ul>` : '<p class="muted">No hay recordatorios pendientes.</p>'}</div>`;
+}
+function formRecordatorio(cid, rid) {
+  const c = S.clientes[cid], lista = c.recordatorios || [], x = rid ? lista.find(r => r.id === rid) : { fecha: addDays(todayISO(), 7), motivo: '' };
+  modal({
+    title: rid ? 'Editar recordatorio' : 'Nuevo recordatorio · ' + nombreCli(c),
+    body: F.date('fecha', 'Fecha para contactarlos', x.fecha) + '<div></div>' + F.area('motivo', 'Motivo', x.motivo, 'placeholder="Ej.: confirmar menú de niños, mandar presupuesto de barra…"'),
+    danger: rid ? { label: 'Eliminar', confirm: '¿Eliminar este recordatorio?', fn: () => DB.save('clientes', { ...clean(c), recordatorios: lista.filter(r => r.id !== rid) }) } : null,
+    onSubmit: d => {
+      if (!d.fecha) { toast('Falta la fecha.'); return false; }
+      const obj = { ...x, id: rid || uid(), fecha: d.fecha, motivo: d.motivo, hecho: false };
+      DB.save('clientes', { ...clean(c), recordatorios: rid ? lista.map(r => r.id === rid ? obj : r) : [...lista, obj] });
+    },
+  });
+}
+function bindRecordatorios() {
+  $$('[data-adicok]').forEach(b => b.onclick = () => { const e = ev(b.dataset.adicok); DB.save('eventos', { ...clean(e), adicionalesOk: true }); toast('Listo: adicionales ofrecidos'); });
+  $$('[data-recok]').forEach(b => b.onclick = () => { const [cid, rid] = b.dataset.recok.split('|'), c = S.clientes[cid]; DB.save('clientes', { ...clean(c), recordatorios: (c.recordatorios || []).map(r => r.id === rid ? { ...r, hecho: true, hechoEl: todayISO() } : r) }); toast('Recordatorio hecho'); });
+  $$('[data-recedit]').forEach(b => b.onclick = () => { const [cid, rid] = b.dataset.recedit.split('|'); formRecordatorio(cid, rid); });
+  $$('[data-recnuevo]').forEach(b => b.onclick = () => formRecordatorio(b.dataset.recnuevo));
+}
+
 /* ---------- CLIENTES ---------- */
-let FILTRO_CLI = '', FILTRO_REL = '';
-VIEWS.clientes = () => `<div class="top"><h1>Clientes</h1><div class="actions"><button id="xls">Descargar base en Excel</button><button class="btn-primary" id="nuevoCli">+ Nuevo cliente</button></div></div>
-  <div class="panel filters"><input id="fQ" style="flex:1;min-width:200px" placeholder="Buscar por nombre, apellido, celular, familia…" value="${esc(FILTRO_CLI)}">
-    <select id="fRel"><option value="">Todas las religiones</option>${[...new Set([...(CONF().listas.religiones || []), ...Object.values(S.clientes).map(c => c.religion).filter(Boolean)])].map(r => `<option ${r === FILTRO_REL ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__sin" ${FILTRO_REL === '__sin' ? 'selected' : ''}>Sin dato</option></select></div><div class="panel tbl-wrap" id="tblCli"></div>`;
+let FCLI = { q: '', rel: '', orden: 'contrato-desc', anioC: '', anioE: '', tipo: '', estado: '', saldo: false };
+// datos de cada cliente para ordenar y filtrar: eventos (sin cancelados), última contratación, próximo evento
+function infoCli(c, hoy = todayISO()) {
+  const es = Object.values(S.eventos).filter(e => e.clienteId === c.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const act = es.filter(e => e.estado !== 'cancelado');
+  const contr = act.map(e => e.fechaContratacion).filter(Boolean).sort();
+  const proximo = act.find(e => e.fecha >= hoy);
+  return { es, act, contrato: contr.length ? contr[contr.length - 1] : '', proximo, ultimo: act.length ? act[act.length - 1] : null };
+}
+VIEWS.clientes = () => {
+  const L = CONF().listas, evs = Object.values(S.eventos);
+  const aniosC = [...new Set(evs.map(e => (e.fechaContratacion || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const aniosE = [...new Set(evs.map(e => e.fecha.slice(0, 4)))].sort().reverse();
+  const tipos = [...new Set([...L.tipos, ...evs.map(tipoEv).filter(Boolean)])];
+  const rels = [...new Set([...(L.religiones || []), ...Object.values(S.clientes).map(c => c.religion).filter(Boolean)])];
+  const sel = (id, list) => `<select id="${id}">${list.map(([v, t]) => `<option value="${esc(v)}" ${String(FCLI[id.slice(1)]) === String(v) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  return `<div class="top"><h1>Clientes</h1><div class="actions"><button id="xls">Descargar base en Excel</button><button class="btn-primary" id="nuevoCli">+ Nuevo cliente</button></div></div>
+  ${panelRecordatorios()}
+  <div class="panel"><div class="filters"><input id="fq" style="flex:1;min-width:200px" placeholder="Buscar por nombre, apellido, celular, familia…" value="${esc(FCLI.q)}">
+    ${sel('forden', [['contrato-desc', 'Contratación: más reciente primero'], ['contrato-asc', 'Contratación: más antigua primero'], ['evento-asc', 'Próximo evento primero'], ['evento-desc', 'Fecha del evento: más lejana primero'], ['nombre', 'Nombre (A–Z)']])}</div>
+    <div class="filters" style="margin-top:8px">
+    ${sel('fanioC', [['', 'Año de contratación: todos'], ...aniosC.map(y => [y, 'Contrataron en ' + y]), ['__sin', 'Sin fecha de contratación']])}
+    ${sel('fanioE', [['', 'Año del evento: todos'], ...aniosE.map(y => [y, 'Evento en ' + y])])}
+    ${sel('ftipo', [['', 'Todos los tipos de evento'], ...tipos.map(t => [t, t])])}
+    ${sel('festado', [['', 'Estado: todos'], ['proximo', 'Con evento por venir'], ['realizado', 'Solo eventos realizados'], ['sin', 'Sin evento (o cancelado)']])}
+    ${sel('frel', [['', 'Todas las religiones'], ...rels.map(r => [r, r]), ['__sin', 'Religión: sin dato']])}
+    <label class="chk"><input type="checkbox" id="fsaldo" ${FCLI.saldo ? 'checked' : ''}> Con saldo pendiente</label>
+    <button class="btn-sm" id="fLimpiar">Limpiar filtros</button></div></div>
+  <div class="panel tbl-wrap" id="tblCli"></div>`;
+};
 VIEWS.clientes.after = () => {
   $('#xls').onclick = exportarExcel;
   $('#nuevoCli').onclick = () => formCliente();
+  bindRecordatorios();
+  const hoy = todayISO();
   const upd = () => {
-    FILTRO_CLI = $('#fQ').value.trim().toLowerCase();
-    const evs = Object.values(S.eventos);
-    FILTRO_REL = $('#fRel').value;
-    let list = Object.values(S.clientes).filter(c => !FILTRO_CLI || [c.nombre, c.apellido, c.celular, c.familia].join(' ').toLowerCase().includes(FILTRO_CLI))
-      .filter(c => !FILTRO_REL || (FILTRO_REL === '__sin' ? !c.religion : c.religion === FILTRO_REL));
-    list.sort((a, b) => nombreCli(a).localeCompare(nombreCli(b)));
-    $('#tblCli').innerHTML = list.length ? `<table><thead><tr><th>Cliente</th><th>Celular</th><th>Religión</th><th>Familia</th><th>Eventos</th></tr></thead><tbody>${list.map(c => {
-      const es = evs.filter(e => e.clienteId === c.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
-      return `<tr class="click" data-go="cliente/${c.id}"><td>${esc(nombreCli(c))}</td><td class="nowrap">${esc(fmtTel(c.celular))}</td><td class="small">${esc(c.religion || '')}</td><td class="small">${esc(c.familia || '')}</td><td class="small">${es.map(e => `${esc(tipoEv(e))} ${fmtD(e.fecha)}`).join('<br>')}</td></tr>`;
-    }).join('')}</tbody></table><p class="small muted">${list.length} clientes</p>` : '<p class="muted">No hay clientes.</p>';
+    FCLI = { q: $('#fq').value.trim().toLowerCase(), orden: $('#forden').value, anioC: $('#fanioC').value, anioE: $('#fanioE').value, tipo: $('#ftipo').value, estado: $('#festado').value, rel: $('#frel').value, saldo: $('#fsaldo').checked };
+    const F2 = FCLI;
+    let list = Object.values(S.clientes).map(c => ({ c, i: infoCli(c, hoy) }))
+      .filter(({ c }) => !F2.q || [c.nombre, c.apellido, c.celular, c.familia].join(' ').toLowerCase().includes(F2.q))
+      .filter(({ c }) => !F2.rel || (F2.rel === '__sin' ? !c.religion : c.religion === F2.rel))
+      .filter(({ i }) => !F2.anioC || (F2.anioC === '__sin' ? !i.contrato : i.act.some(e => (e.fechaContratacion || '').startsWith(F2.anioC))))
+      .filter(({ i }) => !F2.anioE || i.act.some(e => e.fecha.startsWith(F2.anioE)))
+      .filter(({ i }) => !F2.tipo || i.act.some(e => tipoEv(e) === F2.tipo))
+      .filter(({ i }) => !F2.estado || (F2.estado === 'proximo' ? !!i.proximo : F2.estado === 'realizado' ? i.act.length && !i.proximo : !i.act.length))
+      .filter(({ i }) => !F2.saldo || i.act.some(e => e.fecha >= hoy && resumenEv(e).pendiente > 0));
+    const porNombre = (a, b) => nombreCli(a.c).localeCompare(nombreCli(b.c));
+    const vacio = (x, y, f) => (!x && !y) ? 0 : !x ? 1 : !y ? -1 : f();
+    const ord = {
+      'contrato-desc': (a, b) => vacio(a.i.contrato, b.i.contrato, () => b.i.contrato.localeCompare(a.i.contrato)) || porNombre(a, b),
+      'contrato-asc': (a, b) => vacio(a.i.contrato, b.i.contrato, () => a.i.contrato.localeCompare(b.i.contrato)) || porNombre(a, b),
+      'evento-asc': (a, b) => vacio(a.i.proximo, b.i.proximo, () => a.i.proximo.fecha.localeCompare(b.i.proximo.fecha)) || porNombre(a, b),
+      'evento-desc': (a, b) => vacio(a.i.ultimo, b.i.ultimo, () => b.i.ultimo.fecha.localeCompare(a.i.ultimo.fecha)) || porNombre(a, b),
+      nombre: porNombre,
+    }[F2.orden] || porNombre;
+    list.sort(ord);
+    $('#tblCli').innerHTML = list.length ? `<table><thead><tr><th>Cliente</th><th>Celular</th><th>Contrató</th><th>Eventos</th><th>Religión</th><th>Familia</th></tr></thead><tbody>${list.map(({ c, i }) =>
+      `<tr class="click" data-go="cliente/${c.id}"><td>${esc(nombreCli(c))}</td><td class="nowrap">${esc(fmtTel(c.celular))}</td><td class="nowrap small">${i.contrato ? fmtD(i.contrato) : '<span class="muted">—</span>'}</td><td class="small">${i.es.map(e => `${esc(tipoEv(e))} ${fmtD(e.fecha)}${e.estado === 'cancelado' ? ' <span class="muted">(cancelado)</span>' : ''}`).join('<br>')}</td><td class="small">${esc(c.religion || '')}</td><td class="small">${esc(c.familia || '')}</td></tr>`).join('')}</tbody></table><p class="small muted">${list.length} de ${Object.keys(S.clientes).length} clientes</p>` : '<p class="muted">No hay clientes con esos filtros.</p>';
   };
-  $('#fQ').oninput = upd; $('#fRel').onchange = upd; upd();
+  $('#fq').oninput = upd;
+  ['#forden', '#fanioC', '#fanioE', '#ftipo', '#festado', '#frel', '#fsaldo'].forEach(x => $(x).onchange = upd);
+  $('#fLimpiar').onclick = () => { FCLI = { q: '', rel: '', orden: FCLI.orden, anioC: '', anioE: '', tipo: '', estado: '', saldo: false }; render(); };
+  upd();
 };
 const selReligion = (n, v) => { const L = CONF().listas.religiones || []; return F.sel(n, 'Religión / colectividad', opts(!v || L.includes(v) ? L : [...L, v], '— sin dato —'), v || ''); };
 function formCliente(id) {
@@ -883,12 +986,14 @@ VIEWS.cliente = id => {
   const es = Object.values(S.eventos).filter(e => e.clienteId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
   return `<div class="top"><div><a href="#/clientes" class="small">← Clientes</a><h1>${esc(nombreCli(c))}</h1></div><div class="actions">${c.celular ? `<a class="btn btn-wa" target="_blank" href="${waLink(c.celular)}">WhatsApp</a>` : ''}<button id="edCli">Editar</button><button class="btn-primary" id="nuevoEv">+ Evento para este cliente</button></div></div>
   <div class="panel"><dl class="kv"><dt>Celular</dt><dd>${esc(fmtTel(c.celular)) || '—'}</dd><dt>Email</dt><dd>${esc(c.email || '—')}</dd><dt>Religión</dt><dd>${esc(c.religion || '—')}</dd><dt>Familia</dt><dd>${esc(c.familia || '—')}</dd><dt>Notas</dt><dd>${esc(c.notas || '—')}</dd></dl></div>
+  ${panelRecordatorios(id)}
   <div class="panel"><h2>Eventos</h2>${es.length ? `<table><thead><tr><th>Fecha</th><th>Evento</th><th>Estado</th><th class="num">Pendiente $ (hoy)</th></tr></thead><tbody>${es.map(e => `<tr class="click" data-go="evento/${e.id}"><td>${fmtDL(e.fecha)}</td><td>${esc(tituloEv(e))}</td><td>${badgeEstado(e)}</td><td class="num">${fmt$(resumenEv(e).pendiente)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sin eventos.</p>'}</div>`;
 };
 VIEWS.cliente.after = id => {
   if (!S.clientes[id]) return;
   $('#edCli').onclick = () => formCliente(id);
   $('#nuevoEv').onclick = () => formEvento(null, { clienteId: id });
+  bindRecordatorios();
 };
 
 /* ====== ficha del evento + estado de cuenta ====== */
@@ -935,7 +1040,7 @@ VIEWS.evento = id => {
     ${k.sinValor ? '<div class="alert warn">Falta cargar el valor del cubierto. Tocá <b>Condiciones</b>.</div>' : ''}
     ${k.ipcPendienteHoy ? `<div class="alert warn">Este mes ajusta por IPC de ${fmtYM(addMonths(ym(hoy), -1))} y todavía no está cargado: el valor de hoy puede cambiar. <a href="#/ipc">Cargar IPC</a></div>` : ''}
     <div class="cards">
-      <div class="card"><div class="k">Valor cubierto hoy</div><div class="v">${fmt$(k.valorHoy)}</div></div>
+      <div class="card"><div class="k">Valor cubierto hoy</div><div class="v">${fmt$(k.valorHoy)}</div>${k.conAtencion ? `<div class="small muted" title="Solo interno: no sale en la impresión">Precio especial · sin la atención sería ${fmt$(k.valorRealHoy)}</div>` : ''}</div>
       <div class="card"><div class="k">Cubiertos a facturar</div><div class="v">${fmtN(k.facturar)}</div><div class="small muted">${k.c.final.confirmado ? `Final: ${num(k.c.final.adultos)} adultos + ${num(k.c.final.ninos)} niños ½${num(k.c.final.menores) ? ` + ${num(k.c.final.menores)} menores de 4` : ''}` : `Contratados · mínimo ${k.c.minimo}`}</div></div>
       <div class="card good"><div class="k">Cubiertos abonados</div><div class="v">${fmtN(k.pagados)}</div></div>
       <div class="card ${k.pendientes > 0 ? 'warn' : 'good'}"><div class="k">Cubiertos pendientes</div><div class="v">${fmtN(Math.max(0, k.pendientes))}</div>${k.pendientes > 0 && k.antesSemana > 0 && dias > 7 ? `<div class="small muted">${fmtN(k.antesSemana)} antes de la semana del evento · ${fmtN(Math.min(k.pendientes, k.reservaSemana))} esa semana</div>` : ''}</div>
@@ -952,12 +1057,12 @@ VIEWS.evento = id => {
 
     <h3 style="margin-top:18px">Cuadro mes a mes</h3>
     <p class="small muted" style="margin-top:-4px">Cada mes ajusta con el IPC del mes anterior. Desmarcá “Ajusta” para no aplicar un mes, o escribí otro % para este cliente.</p>
-    <div class="tbl-wrap"><table><thead><tr><th>Mes</th><th class="center">Ajusta</th><th>IPC de</th><th class="num">% aplicado</th><th class="num">Valor cubierto</th><th class="num">Pagado</th><th class="num">Cub. abonados</th><th class="num">Acumulado</th><th class="num">Pendientes</th></tr></thead><tbody>
+    <div class="tbl-wrap"><table><thead><tr><th>Mes</th><th class="center">Ajusta</th><th>IPC de</th><th class="num">% aplicado</th><th class="num">Valor cubierto</th>${k.conAtencion ? '<th class="num" title="Solo interno: cómo estaría el cubierto sin el precio especial">Sin la atención</th>' : ''}<th class="num">Pagado</th><th class="num">Cub. abonados</th><th class="num">Acumulado</th><th class="num">Pendientes</th></tr></thead><tbody>
       ${k.meses.map(r => `<tr class="${r.mes < ym(hoy) ? 'past' : ''} ${r.mes === ym(hoy) ? 'cur' : ''}"><td class="nowrap">${fmtYM(r.mes)}${r.i === 0 ? ' <span class="small muted">(base)</span>' : ''}</td>
         <td class="center">${r.i === 0 ? '' : `<input type="checkbox" data-aj="${r.mes}" ${r.aplica ? 'checked' : ''}>`}</td>
         <td class="small muted">${r.i === 0 ? '' : fmtYMc(r.ipcDe) + ' ' + (S.ipc[r.ipcDe] && S.ipc[r.ipcDe].valor !== null && S.ipc[r.ipcDe].valor !== undefined && S.ipc[r.ipcDe].valor !== '' ? fmtP(num(S.ipc[r.ipcDe].valor)) : '<span class="badge b-warn">sin cargar</span>')}</td>
         <td class="num">${r.i === 0 || !r.aplica ? '' : `<input data-pct="${r.mes}" value="${r.manual ? r.pct : ''}" placeholder="${r.pct !== null && !r.manual ? r.pct : '—'}" inputmode="decimal" title="Dejalo vacío para usar el IPC cargado">`}</td>
-        <td class="num">${r.pend ? '<span class="badge b-warn">IPC pendiente</span> ' : ''}${fmt$(r.valor)}</td>
+        <td class="num">${r.pend ? '<span class="badge b-warn">IPC pendiente</span> ' : ''}${r.especial ? `<span class="badge b-ok" title="${esc(r.motivo || 'Precio especial')}">precio especial</span> ` : ''}${fmt$(r.valor)}${r.especial ? ` <button class="btn-sm" data-quitaesp="${r.mes}" title="Quitar el precio especial de este mes">✕</button>` : ''}${r.especial && r.motivo ? `<div class="small muted">${esc(r.motivo)}</div>` : ''}</td>${k.conAtencion ? `<td class="num small muted">${r.real !== r.valor ? fmt$(r.real) : ''}</td>` : ''}
         <td class="num">${r.pagado ? fmt$(r.pagado) : ''}</td><td class="num">${r.cubPagados ? fmtN(r.cubPagados) : ''}</td><td class="num">${fmtN(r.acum)}</td><td class="num">${fmtN(Math.max(0, r.pendientes))}</td></tr>`).join('')}
     </tbody></table></div>
   </div>
@@ -998,6 +1103,7 @@ VIEWS.evento.after = id => {
   $$('[data-xpago]').forEach(b => b.onclick = () => formPagoExtra(id, b.dataset.xpago));
   $$('[data-contr]').forEach(b => b.onchange = () => { const E = clean(ev(id)); const l = E.extras.find(z => z.id === b.dataset.contr); l.contratado = b.checked; DB.save('eventos', E); });
   $$('[data-aj]').forEach(b => b.onchange = () => { const E = clean(ev(id)); E.cuenta = getCuenta(E); E.cuenta.ajustes[b.dataset.aj] = { ...(E.cuenta.ajustes[b.dataset.aj] || {}), aplica: b.checked }; DB.save('eventos', E); });
+  $$('[data-quitaesp]').forEach(b => b.onclick = () => confirmar('¿Quitar el precio especial de ' + fmtYM(b.dataset.quitaesp) + '? El cubierto vuelve al valor calculado por IPC (los pagos ya hechos no cambian).', () => updCuenta(id, k2 => { const a = { ...(k2.ajustes[b.dataset.quitaesp] || {}) }; delete a.valorFijo; delete a.motivo; delete a.pagoId; k2.ajustes[b.dataset.quitaesp] = a; })));
   $$('[data-pct]').forEach(b => b.onchange = () => { const E = clean(ev(id)); E.cuenta = getCuenta(E); const a = { ...(E.cuenta.ajustes[b.dataset.pct] || {}) }; const p = pct(b.value); if (p === null) delete a.pct; else a.pct = p; E.cuenta.ajustes[b.dataset.pct] = a; DB.save('eventos', E); });
 };
 
@@ -1084,15 +1190,20 @@ function formPago(id, pid) {
   const L = CONF().listas;
   const valorDe = f => k.valorEnMes(ym(f || todayISO()));
   const ini = pid ? p.valor : valorDe(p.fecha);
+  // precio especial que fijó este mismo pago (si lo hay)
+  const espMes = pid ? Object.keys(c.ajustes).find(m => c.ajustes[m].pagoId === pid && num(c.ajustes[m].valorFijo) > 0) : null;
+  const espAj = espMes ? c.ajustes[espMes] : {}, espIni = !!espMes;
   modal({
     title: pid ? 'Editar pago' : 'Registrar pago',
     body: F.date('fecha', 'Fecha', p.fecha, 'id="pFecha"') + F.sel('tipo', 'Concepto', [['cubiertos', 'Pago de cubiertos'], ['iva', 'Pago de IVA']], p.tipo, 'id="pTipo"') +
       `<div class="full fgrid" id="cubBox" style="grid-template-columns:1fr 1fr">` +
       F.num('valor', 'Valor del cubierto aplicado', ini, 'id="pValor"') + F.num('cubiertos', 'Cubiertos (calcula el monto)', !pid && p.sena ? CONF().sena : '', 'id="pCub"') +
-      F.chk('sena', 'Es la seña', p.sena) + '</div>' +
+      F.chk('sena', 'Es la seña', p.sena) +
+      F.chk('especial', 'Precio especial: desde este mes el cubierto le queda en el valor aplicado (y sigue ajustando por IPC desde ahí)', espIni, 'full id="pEsp"') +
+      `<div class="full" id="espBox">${F.text('motivoEsp', 'Motivo de la atención (solo interno)', espAj.motivo || '', 'full placeholder="Ej.: le respetamos el precio de octubre"')}</div>` + '</div>' +
       camposMedios(p, 'Monto recibido (ARS)') +
       F.text('nota', 'Nota (ej.: USD 500 a $1.180)', p.nota, 'full') + '<div class="full" id="pPrev"></div>',
-    danger: pid ? { label: 'Eliminar pago', confirm: '¿Eliminar este pago?', fn: () => updCuenta(id, k2 => { k2.pagos = k2.pagos.filter(x => x.id !== pid); }) } : null,
+    danger: pid ? { label: 'Eliminar pago', confirm: '¿Eliminar este pago?', fn: () => updCuenta(id, k2 => { k2.pagos = k2.pagos.filter(x => x.id !== pid); Object.keys(k2.ajustes).forEach(m => { if (k2.ajustes[m].pagoId === pid) { const a = { ...k2.ajustes[m] }; delete a.valorFijo; delete a.motivo; delete a.pagoId; k2.ajustes[m] = a; } }); }) } : null,
     onOpen: form => {
       const fv = $('#pValor', form), fc = $('#pCub', form), fm = $('#pMonto', form), fm2 = $('#pMonto2', form), comb = $('#pComb', form);
       const total = () => num(fm.value) + (comb.checked ? num(fm2.value) : 0);
@@ -1102,6 +1213,7 @@ function formPago(id, pid) {
       fc.oninput = () => { if (fc.value) fm.value = Math.max(0, Math.round(num(fc.value) * num(fv.value)) - (comb.checked ? num(fm2.value) : 0)); };
       const u = () => {
         $('#cubBox', form).style.display = $('#pTipo', form).value === 'iva' ? 'none' : '';
+        $('#espBox', form).style.display = $('#pEsp', form).checked ? '' : 'none';
         const v = num(fv.value), m = total();
         if ($('#pTipo', form).value === 'iva') { $('#pPrev', form).innerHTML = `<div class="alert info">IVA pendiente: ${fmt$(k.ivaPendiente)}</div>`; return; }
         const credPrev = pid ? 0 : k.credito;
@@ -1109,7 +1221,8 @@ function formPago(id, pid) {
         const r = Math.round(m + credPrev - n * v);
         const mesPend = (k.meses.find(x => x.mes === ym($('#pFecha', form).value)) || {}).pend;
         $('#pPrev', form).innerHTML = (mesPend ? '<div class="alert warn">El IPC que ajusta ese mes todavía no está cargado. Si cobrás igual, revisá el valor aplicado.</div>' : '') +
-          (v ? `<div class="alert info">${credPrev ? `Saldo a favor previo ${fmt$(credPrev)} + ` : ''}${fmt$(m)} ÷ ${fmt$(v)} = <b>${n} cubiertos</b> congelados${r ? ` · quedan <b>${fmt$(r)}</b> a favor` : ''}.</div>` : '');
+          (v ? `<div class="alert info">${credPrev ? `Saldo a favor previo ${fmt$(credPrev)} + ` : ''}${fmt$(m)} ÷ ${fmt$(v)} = <b>${n} cubiertos</b> congelados${r ? ` · quedan <b>${fmt$(r)}</b> a favor` : ''}.</div>` : '') +
+          ($('#pEsp', form).checked && v ? `<div class="alert info">Desde ${fmtYM(ym($('#pFecha', form).value))} el cubierto de este cliente pasa a <b>${fmt$(v)}</b> (por IPC estaría en ${fmt$(k.valorEnMes(ym($('#pFecha', form).value)))}). Los meses siguientes ajustan desde este valor.</div>` : '');
       };
       bindMedios(form); form.addEventListener('input', u); form.addEventListener('change', u); u();
     },
@@ -1121,6 +1234,9 @@ function formPago(id, pid) {
         const obj = { id: pid || uid(), creado: (p && p.creado) || new Date().toISOString(), fecha: d.fecha, tipo: d.tipo, monto: mp.monto, valor: d.tipo === 'iva' ? null : num(d.valor), sena: d.tipo === 'iva' ? false : d.sena, medio: mp.medio, nota: d.nota };
         if (mp.medios) obj.medios = mp.medios;
         k2.pagos = pid ? k2.pagos.map(x => x.id === pid ? obj : x) : [...k2.pagos, obj];
+        // precio especial: se guarda en el mes del pago, atado a este pago
+        Object.keys(k2.ajustes).forEach(m => { if (k2.ajustes[m].pagoId === obj.id) { const a = { ...k2.ajustes[m] }; delete a.valorFijo; delete a.motivo; delete a.pagoId; k2.ajustes[m] = a; } });
+        if (d.especial && d.tipo !== 'iva') k2.ajustes[ym(d.fecha)] = { ...(k2.ajustes[ym(d.fecha)] || {}), valorFijo: num(d.valor), motivo: d.motivoEsp || '', pagoId: obj.id };
       });
     },
   });
@@ -1328,7 +1444,7 @@ VIEWS.config = () => {
   return `<div class="top"><h1>Configuración</h1></div>
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h2>Valores por defecto</h2><button id="edDef">Editar</button></div>
-      <dl class="kv"><dt>Mínimo sábados</dt><dd>${c.minimos[5]} cubiertos</dd><dt>Mínimo viernes</dt><dd>${c.minimos[4]} cubiertos</dd><dt>Mínimo otros días</dt><dd>${c.minimos.otro} cubiertos</dd>
+      <dl class="kv"><dt>Mínimo sábados</dt><dd>${c.minimos[5]} cubiertos</dd><dt>Mínimo viernes</dt><dd>${c.minimos[4]} cubiertos</dd><dt>Mínimo domingos</dt><dd>${c.minimos.dom} cubiertos</dd><dt>Mínimo otros días</dt><dd>${c.minimos.otro} cubiertos</dd>
       <dt>Seña</dt><dd>${c.sena} cubiertos</dd><dt>Semana del evento</dt><dd>${c.reservaSemana} cubiertos</dd><dt>Meses sin ajuste</dt><dd>${c.mesesCongelado}</dd>
       <dt>Validez pendiente</dt><dd>${c.validezPendiente} días</dd><dt>IVA</dt><dd>${c.iva.pct}% · ${c.iva.activoPorDefecto ? 'activado por defecto' : 'desactivado por defecto'}</dd></dl>
       <p class="small muted">Aplican a los eventos nuevos. Cada evento se puede cambiar en sus Condiciones.</p></div>
@@ -1352,9 +1468,9 @@ VIEWS.config.after = () => {
   const saveConf = patch => DB.save('config', { ...(S.config.general || clean(DEFAULT_CONFIG)), id: 'general', ...patch });
   $('#edDef').onclick = () => modal({
     title: 'Valores por defecto',
-    body: F.num('sab', 'Mínimo sábados', c.minimos[5]) + F.num('vie', 'Mínimo viernes', c.minimos[4]) + F.num('otro', 'Mínimo otros días', c.minimos.otro) + F.num('sena', 'Seña (cubiertos)', c.sena) +
+    body: F.num('sab', 'Mínimo sábados', c.minimos[5]) + F.num('vie', 'Mínimo viernes', c.minimos[4]) + F.num('dom', 'Mínimo domingos', c.minimos.dom) + F.num('otro', 'Mínimo otros días', c.minimos.otro) + F.num('sena', 'Seña (cubiertos)', c.sena) +
       F.num('reservaSemana', 'Cubiertos para la semana del evento', c.reservaSemana) + F.num('mesesCongelado', 'Meses sin ajuste', c.mesesCongelado) + F.num('validezPendiente', 'Validez de una reserva pendiente (días)', c.validezPendiente) + F.num('ivaPct', 'IVA %', c.iva.pct) + F.chk('ivaOn', 'Sumar IVA por defecto en eventos nuevos', c.iva.activoPorDefecto, 'full'),
-    onSubmit: d => saveConf({ minimos: { 5: num(d.sab), 4: num(d.vie), otro: num(d.otro) }, sena: num(d.sena), reservaSemana: num(d.reservaSemana), mesesCongelado: num(d.mesesCongelado), validezPendiente: num(d.validezPendiente), iva: { pct: pct(d.ivaPct) ?? 21, activoPorDefecto: d.ivaOn } }),
+    onSubmit: d => saveConf({ minimos: { 5: num(d.sab), 4: num(d.vie), dom: num(d.dom), otro: num(d.otro) }, sena: num(d.sena), reservaSemana: num(d.reservaSemana), mesesCongelado: num(d.mesesCongelado), validezPendiente: num(d.validezPendiente), iva: { pct: pct(d.ivaPct) ?? 21, activoPorDefecto: d.ivaOn } }),
   });
   $('#edFer').onclick = () => modal({
     title: 'Feriados extra', body: F.area('f', 'Una fecha por renglón (DD/MM/AAAA)', (c.feriadosExtra || []).sort().map(fmtD).join('\n'), 'style="min-height:180px"'),

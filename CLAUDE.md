@@ -17,7 +17,7 @@ Idioma de la interfaz y de las respuestas: **español rioplatense**. El usuario 
 - Cubiertos de un pago = parte entera de (monto + saldo a favor previo) / valor. El resto queda **a favor en pesos** y se suma al pago siguiente.
 - El valor se ajusta **mensualmente por IPC, compuesto**. El ajuste del mes M usa el IPC del mes M-1 (se publica a mediados de M). El mes base no ajusta, los N meses siguientes (`mesesCongelado`, configurable por evento) tampoco, y después ajusta todos los meses. Se puede destildar un mes puntual (ese índice **se pierde**, no se acumula) o poner un % distinto para un cliente.
 - Seña: 20 cubiertos por defecto. Se piden 30 cubiertos para pagar la semana del evento (configurable).
-- Mínimos: 120 cubiertos los sábados y 100 los viernes y otros días, editables por evento (excepciones como 110). El mínimo se cuenta en cubiertos enteros.
+- Mínimos: 120 cubiertos los sábados y domingos, 100 los viernes y otros días, editables por evento (excepciones como 110). El mínimo se cuenta en cubiertos enteros.
 - Número final: adultos y jóvenes de más de 10 años = 1 cubierto, niños de 4 a 10 = ½, menores de 4 no pagan. Se factura máx(mínimo, adultos + ½ niños). Si pagaron de más, queda a favor.
 - Pagos en dólares: se anotan siempre en pesos (con una nota del tipo de cambio).
 - IVA 21% opcional por evento, apagado por defecto; se registra con pagos de tipo IVA.
