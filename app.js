@@ -531,7 +531,7 @@ function nombreUsuario() {
 }
 
 /* ---------- impresión aislada: copia solo la hoja a un iframe y se imprime eso (Safari se traba con la app entera) ---------- */
-const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato' };
+const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato', imprimir: 'Estado de cuenta' };
 function prepararImpresion() {
   const { view, args } = route();
   const doc = $('#main .print-doc');
@@ -1415,7 +1415,7 @@ VIEWS.imprimir = id => {
     <label class="chk"><input type="checkbox" data-po="mes" ${o.mes ? 'checked' : ''}> Detalle mes a mes</label>
     <label class="chk" title="Destildalo para no mostrar cuánto deben en pesos de cubiertos (se calcula a valor de hoy y cambia con el IPC)"><input type="checkbox" data-po="sal" ${o.sal ? 'checked' : ''}> Saldo en pesos</label>
     <label class="chk"><input type="checkbox" data-po="ext" ${o.ext ? 'checked' : ''}> Extras</label>
-    <button class="btn-primary" onclick="window.print()">Imprimir</button></div>
+    <button class="btn-primary" onclick="imprimirHoja()">Imprimir / Guardar PDF</button></div>
   <div class="print-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.2rem;font-family:Georgia,serif">Estado de cuenta</div><div>Emitido el ${fmtD(todayISO())}</div></div></div>
     <table style="margin-bottom:6px"><tbody>
