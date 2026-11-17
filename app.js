@@ -941,7 +941,7 @@ VIEWS.clientes = () => {
   return `<div class="top"><h1>Clientes</h1><div class="actions"><button id="xls">Descargar base en Excel</button><button class="btn-primary" id="nuevoCli">+ Nuevo cliente</button></div></div>
   ${panelRecordatorios()}
   <div class="panel"><div class="filters"><input id="fq" style="flex:1;min-width:200px" placeholder="Buscar por nombre, apellido, celular, familia…" value="${esc(FCLI.q)}">
-    ${sel('forden', [['contrato-desc', 'Contratación: más reciente primero'], ['contrato-asc', 'Contratación: más antigua primero'], ['evento-asc', 'Próximo evento primero'], ['evento-desc', 'Fecha del evento: más lejana primero'], ['nombre', 'Nombre (A–Z)']])}</div>
+    ${sel('forden', [['contrato-desc', 'Contratación: más reciente primero'], ['contrato-asc', 'Contratación: más antigua primero'], ['evento-asc', 'Eventos: del más cercano al más lejano'], ['evento-desc', 'Eventos: del más lejano al más cercano'], ['nombre', 'Nombre (A–Z)']])}</div>
     <div class="filters" style="margin-top:8px">
     ${sel('fanioC', [['', 'Año de contratación: todos'], ...aniosC.map(y => [y, 'Contrataron en ' + y]), ['__sin', 'Sin fecha de contratación']])}
     ${sel('fanioE', [['', 'Año del evento: todos'], ...aniosE.map(y => [y, 'Evento en ' + y])])}
@@ -969,12 +969,14 @@ VIEWS.clientes.after = () => {
       .filter(({ i }) => !F2.estado || (F2.estado === 'proximo' ? !!i.proximo : F2.estado === 'realizado' ? i.act.length && !i.proximo : !i.act.length))
       .filter(({ i }) => !F2.saldo || i.act.some(e => e.fecha >= hoy && resumenEv(e).pendiente > 0));
     const porNombre = (a, b) => nombreCli(a.c).localeCompare(nombreCli(b.c));
+    const grupoEv = x => x.i.proximo ? 0 : x.i.ultimo ? 1 : 2;
     const vacio = (x, y, f) => (!x && !y) ? 0 : !x ? 1 : !y ? -1 : f();
     const ord = {
       'contrato-desc': (a, b) => vacio(a.i.contrato, b.i.contrato, () => b.i.contrato.localeCompare(a.i.contrato)) || porNombre(a, b),
       'contrato-asc': (a, b) => vacio(a.i.contrato, b.i.contrato, () => a.i.contrato.localeCompare(b.i.contrato)) || porNombre(a, b),
-      'evento-asc': (a, b) => vacio(a.i.proximo, b.i.proximo, () => a.i.proximo.fecha.localeCompare(b.i.proximo.fecha)) || porNombre(a, b),
-      'evento-desc': (a, b) => vacio(a.i.ultimo, b.i.ultimo, () => b.i.ultimo.fecha.localeCompare(a.i.ultimo.fecha)) || porNombre(a, b),
+      // primero los que tienen evento por venir (por su próximo evento), después los ya realizados (el más reciente primero) y al final los sin evento
+      'evento-asc': (a, b) => grupoEv(a) - grupoEv(b) || (a.i.proximo ? a.i.proximo.fecha.localeCompare(b.i.proximo.fecha) : a.i.ultimo ? b.i.ultimo.fecha.localeCompare(a.i.ultimo.fecha) : 0) || porNombre(a, b),
+      'evento-desc': (a, b) => grupoEv(a) - grupoEv(b) || (a.i.proximo ? b.i.proximo.fecha.localeCompare(a.i.proximo.fecha) : a.i.ultimo ? b.i.ultimo.fecha.localeCompare(a.i.ultimo.fecha) : 0) || porNombre(a, b),
       nombre: porNombre,
     }[F2.orden] || porNombre;
     list.sort(ord);
