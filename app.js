@@ -95,6 +95,7 @@ const DEFAULT_CONFIG = {
     medios: ['Transferencia', 'Efectivo', 'Dólares (anotado en pesos)', 'Otro'],
     especiales: ['Celíaco (sin TACC)', 'Vegetariano', 'Vegano', 'Kosher (comprado)', 'Lácteo', 'Sin sal', 'Diabético (sin azúcar)', 'Sin lactosa', 'Intolerancia / alergia'],
     centrosMesa: [],
+    religiones: ['Católica', 'Judía', 'Evangélica', 'Otra'],
     egresos: ['Alquiler mensual', 'Electricidad', 'ABL', 'Gas', 'Empleados', 'Carnicería', 'Mayorista', 'Pescadería', 'Verdulería', 'Caja chica', 'Arreglos y mantenimiento', 'Remodelaciones', 'Quesos', 'Hielo', 'Congelados', 'Comisiones Juan', 'Pauta', 'Contenido', 'Otros'],
   },
   minimos: { 5: 120 /*sáb*/, 4: 100 /*vie*/, otro: 100 },
@@ -103,6 +104,21 @@ const DEFAULT_CONFIG = {
   mesesCongelado: 1,
   validezPendiente: 10,
   iva: { activoPorDefecto: false, pct: 21 },
+  // timings modelo: cada momento empieza a una hora y termina cuando empieza el siguiente
+  timings: [
+    { id: 'noche', nombre: 'Noche 21.30 a 5 hs', fin: '05:00', items: [
+      { hora: '21:30', momento: 'Recepción' }, { hora: '23:00', momento: 'Presentación, Vals, Tanda de música' }, { hora: '00:00', momento: 'Plato Principal' },
+      { hora: '00:45', momento: 'Tanda de música' }, { hora: '01:35', momento: 'Postre' }, { hora: '02:20', momento: 'Tanda de música' },
+      { hora: '03:10', momento: 'Brindis y Mesa Dulce' }, { hora: '03:50', momento: 'Tanda de música' }, { hora: '04:45', momento: 'Se sirve Final de Fiesta' }] },
+    { id: 'barbat-sab', nombre: 'Bar/Bat Mitzvá · sábado noche', fin: '03:30', items: [
+      { hora: '20:30', momento: 'Recepción' }, { hora: '22:00', momento: 'Presentación, Tanda de música Judía', nota: 'Video de entrada' }, { hora: '22:30', momento: 'Plato Principal + Homenajes' },
+      { hora: '23:15', momento: 'Tanda de música' }, { hora: '00:00', momento: 'Postre + Homenajes' }, { hora: '00:40', momento: 'Velas' },
+      { hora: '01:30', momento: 'Brindis y Mesa Dulce' }, { hora: '02:00', momento: 'Tanda de música' }, { hora: '03:00', momento: 'Fin de Fiesta' }] },
+    { id: 'barbat-dom', nombre: 'Bar/Bat Mitzvá · domingo mediodía', fin: '19:15', items: [
+      { hora: '12:30', momento: 'Recepción' }, { hora: '14:00', momento: 'Presentación, Tanda de música Judía', nota: 'Video de entrada' }, { hora: '14:30', momento: 'Plato Principal + Homenajes' },
+      { hora: '15:15', momento: 'Tanda de música' }, { hora: '16:00', momento: 'Postre + Homenajes' }, { hora: '16:40', momento: 'Velas' },
+      { hora: '17:20', momento: 'Brindis y Mesa Dulce' }, { hora: '18:00', momento: 'Tanda de música' }, { hora: '18:45', momento: 'Fin de Fiesta' }] },
+  ],
   feriadosExtra: [],
   feriadosQuitados: [],
   feriadosNombres: {},
@@ -110,7 +126,7 @@ const DEFAULT_CONFIG = {
 };
 const LISTA_LABELS = {
   tipos: 'Tipos de evento', menus: 'Menús', principalAdultos: 'Plato principal adultos', guarnicionAdultos: 'Guarnición adultos',
-  principalNinos: 'Plato principal niños', guarnicionNinos: 'Guarnición niños', medios: 'Medios de pago', especiales: 'Menús especiales', centrosMesa: 'Centros de mesa', egresos: 'Categorías de egresos',
+  principalNinos: 'Plato principal niños', guarnicionNinos: 'Guarnición niños', medios: 'Medios de pago', especiales: 'Menús especiales', centrosMesa: 'Centros de mesa', religiones: 'Religión / colectividad', egresos: 'Categorías de egresos',
 };
 // Catálogo inicial de extras (lista de precios enviada por Juan, nov 2026). Costos a completar.
 const EXTRAS_INICIALES = [
@@ -530,7 +546,7 @@ function render() {
     aplicarTema();
   }
   const { view, args } = route();
-  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos' }[view] || view;
+  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos' }[view] || view;
   $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === navKey));
   const main = $('#main');
   const fn = VIEWS[view] || VIEWS.inicio;
@@ -742,6 +758,7 @@ function formEvento(id, pre = {}) {
     <div class="full fgrid" id="cliNuevo" style="grid-template-columns:1fr 1fr">
       ${F.text('c_nombre', 'Nombre', '')}${F.text('c_apellido', 'Apellido', '')}
       ${F.text('c_celular', 'Celular', '', 'placeholder="+54911 xxxx-xxxx" inputmode="tel"')}${F.text('c_familia', 'Miembros de la familia', '', 'placeholder="Ej.: Laura (mamá), Diego (papá), Sofi"')}
+      ${selReligion('c_religion', '')}
     </div>
     ${F.sep('Evento')}
     ${F.sel('tipo', 'Tipo de evento', opts([...L.tipos, 'Otro']), e.tipo, 'id="selTipo"')}
@@ -777,7 +794,7 @@ function formEvento(id, pre = {}) {
       let clienteId = d.clienteId;
       if (clienteId === '__nuevo') {
         if (!d.c_nombre && !d.c_apellido) { toast('Completá el nombre del cliente.'); return false; }
-        clienteId = DB.save('clientes', { nombre: d.c_nombre, apellido: d.c_apellido, celular: normTel(d.c_celular), familia: d.c_familia, creado: todayISO() }, true);
+        clienteId = DB.save('clientes', { nombre: d.c_nombre, apellido: d.c_apellido, celular: normTel(d.c_celular), familia: d.c_familia, religion: d.c_religion || '', creado: todayISO() }, true);
       }
       const obj = { ...(e.id ? e : {}), clienteId, tipo: d.tipo, tipoOtro: d.tipo === 'Otro' ? d.tipoOtro : '', homenajeado: d.homenajeado, fecha: d.fecha, invitados: numOrNull(d.invitados), fechaContratacion: d.fechaContratacion, estado: d.estado, vencePendiente: d.estado === 'pendiente' ? d.vencePendiente : '', notas: d.notas };
       if (!id) {
@@ -797,29 +814,33 @@ function formEvento(id, pre = {}) {
 }
 
 /* ---------- CLIENTES ---------- */
-let FILTRO_CLI = '';
+let FILTRO_CLI = '', FILTRO_REL = '';
 VIEWS.clientes = () => `<div class="top"><h1>Clientes</h1><div class="actions"><button id="xls">Descargar base en Excel</button><button class="btn-primary" id="nuevoCli">+ Nuevo cliente</button></div></div>
-  <div class="panel"><input id="fQ" placeholder="Buscar por nombre, apellido, celular, familia…" value="${esc(FILTRO_CLI)}"></div><div class="panel tbl-wrap" id="tblCli"></div>`;
+  <div class="panel filters"><input id="fQ" style="flex:1;min-width:200px" placeholder="Buscar por nombre, apellido, celular, familia…" value="${esc(FILTRO_CLI)}">
+    <select id="fRel"><option value="">Todas las religiones</option>${[...new Set([...(CONF().listas.religiones || []), ...Object.values(S.clientes).map(c => c.religion).filter(Boolean)])].map(r => `<option ${r === FILTRO_REL ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__sin" ${FILTRO_REL === '__sin' ? 'selected' : ''}>Sin dato</option></select></div><div class="panel tbl-wrap" id="tblCli"></div>`;
 VIEWS.clientes.after = () => {
   $('#xls').onclick = exportarExcel;
   $('#nuevoCli').onclick = () => formCliente();
   const upd = () => {
     FILTRO_CLI = $('#fQ').value.trim().toLowerCase();
     const evs = Object.values(S.eventos);
-    let list = Object.values(S.clientes).filter(c => !FILTRO_CLI || [c.nombre, c.apellido, c.celular, c.familia].join(' ').toLowerCase().includes(FILTRO_CLI));
+    FILTRO_REL = $('#fRel').value;
+    let list = Object.values(S.clientes).filter(c => !FILTRO_CLI || [c.nombre, c.apellido, c.celular, c.familia].join(' ').toLowerCase().includes(FILTRO_CLI))
+      .filter(c => !FILTRO_REL || (FILTRO_REL === '__sin' ? !c.religion : c.religion === FILTRO_REL));
     list.sort((a, b) => nombreCli(a).localeCompare(nombreCli(b)));
-    $('#tblCli').innerHTML = list.length ? `<table><thead><tr><th>Cliente</th><th>Celular</th><th>Familia</th><th>Eventos</th></tr></thead><tbody>${list.map(c => {
+    $('#tblCli').innerHTML = list.length ? `<table><thead><tr><th>Cliente</th><th>Celular</th><th>Religión</th><th>Familia</th><th>Eventos</th></tr></thead><tbody>${list.map(c => {
       const es = evs.filter(e => e.clienteId === c.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
-      return `<tr class="click" data-go="cliente/${c.id}"><td>${esc(nombreCli(c))}</td><td class="nowrap">${esc(fmtTel(c.celular))}</td><td class="small">${esc(c.familia || '')}</td><td class="small">${es.map(e => `${esc(tipoEv(e))} ${fmtD(e.fecha)}`).join('<br>')}</td></tr>`;
+      return `<tr class="click" data-go="cliente/${c.id}"><td>${esc(nombreCli(c))}</td><td class="nowrap">${esc(fmtTel(c.celular))}</td><td class="small">${esc(c.religion || '')}</td><td class="small">${esc(c.familia || '')}</td><td class="small">${es.map(e => `${esc(tipoEv(e))} ${fmtD(e.fecha)}`).join('<br>')}</td></tr>`;
     }).join('')}</tbody></table><p class="small muted">${list.length} clientes</p>` : '<p class="muted">No hay clientes.</p>';
   };
-  $('#fQ').oninput = upd; upd();
+  $('#fQ').oninput = upd; $('#fRel').onchange = upd; upd();
 };
+const selReligion = (n, v) => { const L = CONF().listas.religiones || []; return F.sel(n, 'Religión / colectividad', opts(!v || L.includes(v) ? L : [...L, v], '— sin dato —'), v || ''); };
 function formCliente(id) {
   const c = id ? cli(id) : {};
   modal({
     title: id ? 'Editar cliente' : 'Nuevo cliente',
-    body: F.text('nombre', 'Nombre', c.nombre) + F.text('apellido', 'Apellido', c.apellido) + F.text('celular', 'Celular', fmtTel(c.celular), 'placeholder="+54911 xxxx-xxxx" inputmode="tel"') + F.text('email', 'Email (opcional)', c.email) + F.area('familia', 'Miembros de la familia', c.familia) + F.area('notas', 'Notas', c.notas),
+    body: F.text('nombre', 'Nombre', c.nombre) + F.text('apellido', 'Apellido', c.apellido) + F.text('celular', 'Celular', fmtTel(c.celular), 'placeholder="+54911 xxxx-xxxx" inputmode="tel"') + F.text('email', 'Email (opcional)', c.email) + selReligion('religion', c.religion) + F.area('familia', 'Miembros de la familia', c.familia) + F.area('notas', 'Notas', c.notas),
     danger: id ? { label: 'Eliminar cliente', confirm: '¿Eliminar este cliente? Sus eventos quedan sin cliente asignado.', fn: () => { DB.remove('clientes', id); go('clientes'); } } : null,
     onSubmit: d => { if (!d.nombre && !d.apellido) { toast('Completá el nombre.'); return false; } const nid = DB.save('clientes', { ...c, ...d, celular: normTel(d.celular), creado: c.creado || todayISO() }); if (!id) go('cliente/' + nid); },
   });
@@ -828,7 +849,7 @@ VIEWS.cliente = id => {
   const c = S.clientes[id]; if (!c) return '<p>Cliente no encontrado. <a href="#/clientes">Volver</a></p>';
   const es = Object.values(S.eventos).filter(e => e.clienteId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
   return `<div class="top"><div><a href="#/clientes" class="small">← Clientes</a><h1>${esc(nombreCli(c))}</h1></div><div class="actions">${c.celular ? `<a class="btn btn-wa" target="_blank" href="${waLink(c.celular)}">WhatsApp</a>` : ''}<button id="edCli">Editar</button><button class="btn-primary" id="nuevoEv">+ Evento para este cliente</button></div></div>
-  <div class="panel"><dl class="kv"><dt>Celular</dt><dd>${esc(fmtTel(c.celular)) || '—'}</dd><dt>Email</dt><dd>${esc(c.email || '—')}</dd><dt>Familia</dt><dd>${esc(c.familia || '—')}</dd><dt>Notas</dt><dd>${esc(c.notas || '—')}</dd></dl></div>
+  <div class="panel"><dl class="kv"><dt>Celular</dt><dd>${esc(fmtTel(c.celular)) || '—'}</dd><dt>Email</dt><dd>${esc(c.email || '—')}</dd><dt>Religión</dt><dd>${esc(c.religion || '—')}</dd><dt>Familia</dt><dd>${esc(c.familia || '—')}</dd><dt>Notas</dt><dd>${esc(c.notas || '—')}</dd></dl></div>
   <div class="panel"><h2>Eventos</h2>${es.length ? `<table><thead><tr><th>Fecha</th><th>Evento</th><th>Estado</th><th class="num">Pendiente $ (hoy)</th></tr></thead><tbody>${es.map(e => `<tr class="click" data-go="evento/${e.id}"><td>${fmtDL(e.fecha)}</td><td>${esc(tituloEv(e))}</td><td>${badgeEstado(e)}</td><td class="num">${fmt$(resumenEv(e).pendiente)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sin eventos.</p>'}</div>`;
 };
 VIEWS.cliente.after = id => {
@@ -871,6 +892,9 @@ VIEWS.evento = id => {
       ${(() => { const a = e.ambientacion || {};
         return `<dl class="kv"><dt>Centro de mesa</dt><dd>${esc(a.centroMesa || '—')}</dd><dt>Mantel</dt><dd>${esc(a.mantel || '—')}</dd>${a.notas ? `<dt>Notas</dt><dd>${esc(a.notas)}</dd>` : ''}</dl>`; })()}</div>
   </div>
+
+  <div class="panel"><div class="panel-h"><h3>Timing</h3><div class="actions" style="display:flex;gap:6px;flex-wrap:wrap">${tieneTiming(e) ? `<button class="btn-sm" data-go="timing/${id}">Imprimir timing</button>` : ''}<button class="btn-sm" id="edTiming">${tieneTiming(e) ? 'Editar timing' : 'Armar timing'}</button></div></div>
+    ${tieneTiming(e) ? tablaTiming(e.timing, 'small') : '<p class="muted small" style="margin:0">Todavía no tiene timing. Tocá <b>Armar timing</b> y elegí uno de los modelos.</p>'}</div>
 
   <div class="panel"><div class="panel-h"><h2>Cubiertos</h2><div class="actions" style="display:flex;gap:6px;flex-wrap:wrap">
       <button id="condic">Condiciones</button><button id="final">Número final de invitados</button><button class="btn-primary" id="pago">+ Registrar pago</button></div></div>
@@ -930,6 +954,7 @@ VIEWS.evento.after = id => {
   $('#edMenu').onclick = () => formMenu(id);
   $('#edServ').onclick = () => formServicio(id);
   $('#edAmb').onclick = () => formAmbientacion(id);
+  $('#edTiming').onclick = () => formTiming(id);
   $('#condic').onclick = () => formCondiciones(id);
   $('#final').onclick = () => formFinal(id);
   $('#pago').onclick = () => formPago(id);
@@ -1277,6 +1302,10 @@ VIEWS.config = () => {
       <p class="small muted" style="margin-top:0">Los feriados nacionales (fijos, trasladables, Carnaval y Semana Santa) se calculan solos para cada año. Los puentes turísticos se cargan desde el <b>Calendario → Editar feriados</b> cuando el Gobierno los anuncia. Acá podés agregar fechas sueltas.</p>
       <p class="small">${(c.feriadosExtra || []).sort().map(fmtD).join(', ') || '—'}</p></div>
   </div>
+  <div class="panel"><div class="panel-h"><h2>Timings modelo</h2><button id="addTm">+ Nuevo modelo</button></div>
+    <p class="small muted" style="margin-top:0">Son la base que se carga en cada evento. Cambiarlos no modifica los timings que ya están cargados en los eventos.</p>
+    <div class="grid3">${(c.timings || []).map((t, i) => `<div class="card"><div class="panel-h"><b>${esc(t.nombre)}</b><button class="btn-sm" data-tm="${i}">Editar</button></div>
+      <div class="small">${tramosTiming(t).map(x => `${fmtHora(x.hora)} ${esc(x.momento)}`).join(' · ')}</div></div>`).join('')}</div></div>
   <div class="panel"><div class="panel-h"><h2>Listas de opciones</h2></div><div class="grid3">
     ${Object.entries(LISTA_LABELS).map(([k, t]) => `<div class="card"><div class="panel-h"><b>${t}</b><button class="btn-sm" data-lista="${k}">Editar</button></div><div class="small">${c.listas[k].map(esc).join(' · ')}</div></div>`).join('')}
   </div></div>
@@ -1297,6 +1326,30 @@ VIEWS.config.after = () => {
     title: 'Feriados extra', body: F.area('f', 'Una fecha por renglón (DD/MM/AAAA)', (c.feriadosExtra || []).sort().map(fmtD).join('\n'), 'style="min-height:180px"'),
     onSubmit: d => saveConf({ feriadosExtra: d.f.split(/\n+/).map(s => s.trim()).filter(Boolean).map(s => { const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? `${m[3]}-${pad(m[2])}-${pad(m[1])}` : null; }).filter(Boolean) }),
   });
+  const formModelo = i => {
+    const lista = clean(c.timings || []), t = i === null ? { id: 'm' + uid(), nombre: '', fin: '', items: [] } : lista[i];
+    modal({ title: i === null ? 'Nuevo timing modelo' : 'Timing modelo', wide: true,
+      body: F.text('nombre', 'Nombre del modelo', t.nombre, 'class="full"') +
+        F.area('items', 'Un momento por renglón: hora y nombre. Para una nota, agregá " | nota" al final.', t.items.map(x => `${x.hora} ${x.momento}${x.nota ? ' | ' + x.nota : ''}`).join('\n'), 'style="min-height:240px" placeholder="21:30 Recepción\n23:00 Presentación | Video de entrada"') +
+        `<label class="f"><span>Termina a las</span><input type="time" name="fin" value="${esc(t.fin || '')}"></label>`,
+      danger: i === null ? null : { label: 'Eliminar modelo', confirm: '¿Eliminar este timing modelo? Los eventos que ya lo tienen no cambian.', fn: () => { lista.splice(i, 1); saveConf({ timings: lista }); } },
+      onSubmit: d => {
+        if (!d.nombre) { toast('Poné un nombre al modelo.'); return false; }
+        const items = [];
+        for (const linea of d.items.split(/\n+/).map(x => x.trim()).filter(Boolean)) {
+          const m = linea.match(/^(\d{1,2})[:.](\d{2})\s*(?:hs\.?)?\s+(.+)$/);
+          if (!m) { toast('No entendí el renglón "' + linea + '". Empezá con la hora, ej.: 21:30 Recepción'); return false; }
+          const [mom, nota] = m[3].split('|').map(x => x.trim());
+          items.push({ hora: `${pad(m[1])}:${m[2]}`, momento: mom, ...(nota ? { nota } : {}) });
+        }
+        if (!items.length) { toast('Agregá al menos un momento.'); return false; }
+        const nuevo = { ...t, nombre: d.nombre, fin: d.fin, items };
+        if (i === null) lista.push(nuevo); else lista[i] = nuevo;
+        saveConf({ timings: lista });
+      } });
+  };
+  $$('[data-tm]').forEach(b => b.onclick = () => formModelo(+b.dataset.tm));
+  $('#addTm').onclick = () => formModelo(null);
   $$('[data-lista]').forEach(b => b.onclick = () => { const k = b.dataset.lista; modal({ title: LISTA_LABELS[k], body: F.area('v', 'Una opción por renglón', c.listas[k].join('\n'), 'style="min-height:220px"'), onSubmit: d => saveConf({ listas: { ...c.listas, [k]: d.v.split('\n').map(s => s.trim()).filter(Boolean) } }) }); });
   $('#xls').onclick = exportarExcel;
   $('#xlsEg').onclick = exportarMovimientos;
@@ -1360,8 +1413,108 @@ VIEWS.imprimir = id => {
     <div class="foot">Salón Dorado · Villa Urquiza, Ciudad Autónoma de Buenos Aires</div>
   </div>`;
 };
+/* ---------- TIMING del evento ---------- */
+const tieneTiming = e => !!(e.timing && (e.timing.items || []).length);
+const minDe = h => { const [a, b] = String(h || '0:0').split(':').map(Number); return (a || 0) * 60 + (b || 0); };
+const horaDe = m => { m = ((m % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+const fmtHora = h => h ? `${+h.slice(0, 2)}.${h.slice(3, 5)}` : '';   // '00:45' → '0.45' (como en los timings de Canva)
+// cada momento termina cuando empieza el siguiente; el último, a la hora de fin
+function tramosTiming(t) {
+  const it = (t.items || []).filter(x => x.hora || x.momento);
+  return it.map((x, i) => ({ ...x, hasta: i < it.length - 1 ? it[i + 1].hora : t.fin || '' }));
+}
+function tablaTiming(t, cls = '') {
+  return `<table class="${cls}"><tbody>${tramosTiming(t).map(x => `<tr><td class="nowrap" style="width:150px">${fmtHora(x.hora)}${x.hasta ? ' a ' + fmtHora(x.hasta) : ''} hs.</td><td><b>${esc(x.momento)}</b>${x.nota ? ` <span class="muted small">· ${esc(x.nota)}</span>` : ''}</td></tr>`).join('')}</tbody></table>`;
+}
+const plantillasTiming = () => CONF().timings || [];
+function plantillaSugerida(e) {
+  const P = plantillasTiming(), bb = /mitzv/i.test(tipoEv(e)), d = e.fecha ? dow(e.fecha) : 6;
+  return (bb && d === 0 && P.find(p => p.id === 'barbat-dom')) || (bb && P.find(p => p.id === 'barbat-sab')) || P.find(p => p.id === 'noche') || P[0];
+}
+
+function formTiming(id) {
+  const e = ev(id);
+  const P = plantillasTiming();
+  let t = tieneTiming(e) ? clean(e.timing) : null;
+  if (!t) { const p = plantillaSugerida(e); t = p ? { plantilla: p.id, fin: p.fin, items: clean(p.items) } : { fin: '', items: [{ hora: '', momento: '' }] }; }
+  const filas = () => t.items.map((x, i) => `<div class="tm-row" data-i="${i}">
+      <input type="time" data-f="hora" value="${esc(x.hora || '')}" aria-label="Hora">
+      <input data-f="momento" value="${esc(x.momento || '')}" placeholder="Momento (ej.: Recepción)" aria-label="Momento">
+      <input data-f="nota" value="${esc(x.nota || '')}" placeholder="Nota (opcional)" aria-label="Nota">
+      <span class="tm-btns"><button type="button" class="btn-sm" data-up="${i}" title="Subir">↑</button><button type="button" class="btn-sm" data-down="${i}" title="Bajar">↓</button><button type="button" class="btn-sm btn-danger" data-del-row="${i}" title="Quitar">✕</button></span></div>`).join('');
+  const body = `${F.hint('Cada momento termina cuando empieza el siguiente. Si cambian los horarios, usá <b>Correr horarios</b> para mover todo junto, o cambiá la hora de un momento.')}
+    <div class="full filters"><select id="tmPl">${P.map(p => `<option value="${esc(p.id)}" ${p.id === t.plantilla ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select><button type="button" id="tmCargar">Cargar este modelo</button></div>
+    <div class="full" id="tmRows"></div>
+    <div class="full filters"><button type="button" id="tmAdd">+ Agregar momento</button>
+      <label class="f" style="flex-direction:row;align-items:center;gap:6px;margin-left:auto">Termina a las <input type="time" id="tmFin" style="width:auto" value="${esc(t.fin || '')}"></label></div>
+    <div class="full filters" style="border-top:1px solid var(--line);padding-top:10px">Correr horarios
+      <select id="tmDesde"></select>
+      <input type="number" id="tmMin" step="5" value="30" style="width:80px"> minutos
+      <button type="button" id="tmAtras">Más temprano</button><button type="button" id="tmAdel">Más tarde</button></div>`;
+  const { d } = modal({ title: 'Timing · ' + esc(tituloEv(e) || 'Evento'), body, wide: true,
+    danger: tieneTiming(e) ? { label: 'Borrar timing', confirm: '¿Borrar el timing de este evento?', fn: () => { const E = clean(ev(id)); delete E.timing; DB.save('eventos', E); } } : null,
+    onSubmit: () => {
+      leer();
+      const items = t.items.map(x => ({ hora: x.hora || '', momento: (x.momento || '').trim(), ...(x.nota && x.nota.trim() ? { nota: x.nota.trim() } : {}) })).filter(x => x.hora || x.momento);
+      if (!items.length) { toast('Agregá al menos un momento.'); return false; }
+      DB.save('eventos', { ...clean(ev(id)), timing: { plantilla: t.plantilla || '', fin: $('#tmFin', d).value, items } });
+      toast('Timing guardado');
+    } });
+  const leer = () => { $$('.tm-row', d).forEach(r => { const x = t.items[+r.dataset.i]; $$('[data-f]', r).forEach(inp => x[inp.dataset.f] = inp.value); }); t.fin = $('#tmFin', d).value; };
+  const pintar = () => {
+    $('#tmRows', d).innerHTML = filas();
+    $('#tmDesde', d).innerHTML = `<option value="0">todo el timing</option>` + t.items.map((x, i) => i ? `<option value="${i}">desde ${esc(x.momento || 'momento ' + (i + 1))}</option>` : '').join('');
+    $$('[data-del-row]', d).forEach(b => b.onclick = () => { leer(); t.items.splice(+b.dataset.delRow, 1); pintar(); });
+    $$('[data-up]', d).forEach(b => b.onclick = () => { leer(); const i = +b.dataset.up; if (i > 0) { [t.items[i - 1], t.items[i]] = [t.items[i], t.items[i - 1]]; pintar(); } });
+    $$('[data-down]', d).forEach(b => b.onclick = () => { leer(); const i = +b.dataset.down; if (i < t.items.length - 1) { [t.items[i + 1], t.items[i]] = [t.items[i], t.items[i + 1]]; pintar(); } });
+  };
+  pintar();
+  $('#tmAdd', d).onclick = () => { leer(); const ult = t.items[t.items.length - 1]; t.items.push({ hora: ult && ult.hora ? horaDe(minDe(ult.hora) + 30) : '', momento: '' }); pintar(); };
+  $('#tmCargar', d).onclick = () => {
+    const p = P.find(z => z.id === $('#tmPl', d).value); if (!p) return;
+    const cargar = () => { t = { plantilla: p.id, fin: p.fin, items: clean(p.items) }; $('#tmFin', d).value = p.fin || ''; pintar(); };
+    leer(); if (t.items.some(x => x.momento)) { if (!window.__tmOk) { window.__tmOk = true; toast('Tocá de nuevo para reemplazar lo cargado por el modelo.'); setTimeout(() => window.__tmOk = false, 4000); return; } window.__tmOk = false; }
+    cargar();
+  };
+  const correr = sign => {
+    leer(); const m = num($('#tmMin', d).value) * sign, desde = +$('#tmDesde', d).value;
+    if (!m) return;
+    t.items.forEach((x, i) => { if (i >= desde && x.hora) x.hora = horaDe(minDe(x.hora) + m); });
+    if (t.fin) { t.fin = horaDe(minDe(t.fin) + m); $('#tmFin', d).value = t.fin; }
+    pintar(); toast(`Horarios corridos ${Math.abs(m)} minutos ${sign > 0 ? 'más tarde' : 'más temprano'}`);
+  };
+  $('#tmAdel', d).onclick = () => correr(1);
+  $('#tmAtras', d).onclick = () => correr(-1);
+}
+
+// hoja para imprimir, con el estilo de los timings de Canva
+const TIMING_OPTS = { notas: true };
+VIEWS.timing = id => {
+  const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
+  if (!tieneTiming(e)) return `<p>Este evento no tiene timing. <a href="#/evento/${id}">Volver</a></p>`;
+  const o = TIMING_OPTS;
+  return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
+    <label class="chk"><input type="checkbox" data-to="notas" ${o.notas ? 'checked' : ''}> Columna para anotar a mano</label>
+    <button id="edT2">Editar horarios</button>
+    <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+  <div class="print-doc timing-doc">
+    <div class="center"><img src="${LOGO}" alt="Salón Dorado" style="width:170px"></div>
+    <div class="center" style="font-size:1.6rem;margin-top:14px">Timing</div>
+    <div class="center" style="margin-top:4px">${esc(DIAS[dow(e.fecha)])} ${fmtD(e.fecha)}</div>
+    <div class="center" style="color:#777;margin-top:2px">${esc(tituloEv(e))}</div>
+    <table class="tm-print"><tbody>${tramosTiming(e.timing).map(x => `<tr>
+      <td class="tm-h">${fmtHora(x.hora)}${x.hasta ? ' a ' + fmtHora(x.hasta) : ''} hs.</td>
+      <td class="tm-m">${x.nota ? `<div class="tm-n">${esc(x.nota)}</div>` : ''}<b>${esc(x.momento)}</b></td>
+      ${o.notas ? '<td class="tm-esc"></td>' : ''}</tr>`).join('')}</tbody></table>
+  </div>`;
+};
+VIEWS.timing.after = id => {
+  $$('[data-to]').forEach(i => i.onchange = () => { TIMING_OPTS[i.dataset.to] = i.checked; render(); });
+  const b = $('#edT2'); if (b) b.onclick = () => formTiming(id);
+};
+
 /* ---------- hoja de servicio para cocina y organizadora (sin precios) ---------- */
-const ORDEN_OPTS = { cliente: true, menu: true, servicio: true, amb: true, extras: true, obs: true };
+const ORDEN_OPTS = { cliente: true, menu: true, servicio: true, amb: true, timing: true, extras: true, obs: true };
 VIEWS.orden = id => {
   const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
   const c = cli(e.clienteId), k = calcCuenta(e), o = ORDEN_OPTS;
@@ -1373,7 +1526,7 @@ VIEWS.orden = id => {
   const extras = (e.extras || []).filter(l => l.nombre);
   const op = (k2, t) => `<label class="chk"><input type="checkbox" data-oo="${k2}" ${o[k2] ? 'checked' : ''}> ${t}</label>`;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
-    ${op('cliente', 'Datos del cliente')}${op('menu', 'Menú')}${op('servicio', 'Bebida y especiales')}${op('amb', 'Ambientación')}${op('extras', 'Adicionales')}${op('obs', 'Espacio para notas')}
+    ${op('cliente', 'Datos del cliente')}${op('menu', 'Menú')}${op('servicio', 'Bebida y especiales')}${op('amb', 'Ambientación')}${op('timing', 'Timing')}${op('extras', 'Adicionales')}${op('obs', 'Espacio para notas')}
     <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
   <div class="print-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.2rem;font-family:Georgia,serif">Hoja de servicio</div><div>Cocina y organización</div><div style="color:#777">Impreso el ${fmtD(todayISO())}</div></div></div>
@@ -1399,6 +1552,8 @@ VIEWS.orden = id => {
 
     ${o.amb ? `<h2>Ambientación</h2><table><tbody>
       ${fila('Centro de mesa', a.centroMesa)}${fila('Mantel', a.mantel)}${a.notas ? fila('Notas', a.notas) : ''}</tbody></table>` : ''}
+
+    ${o.timing && tieneTiming(e) ? `<h2>Timing</h2>${tablaTiming(e.timing)}` : ''}
 
     ${o.extras && extras.length ? `<h2>Adicionales</h2><table><thead><tr><th>Adicional</th><th class="num" style="width:10%">Cant.</th><th>Proveedor</th></tr></thead><tbody>
       ${extras.map(l => `<tr><td>${esc(l.nombre)}</td><td class="num">${fmtN(num(l.cantidad) || 1)}</td><td>${esc([l.proveedor, l.contratado ? '' : 'falta confirmar proveedor'].filter(Boolean).join(' · '))}</td></tr>`).join('')}
@@ -1459,9 +1614,9 @@ function download(blob, name) {
 function exportarExcel() {
   const evs = Object.values(S.eventos).sort((a, b) => a.fecha.localeCompare(b.fecha));
   const conEv = new Set(evs.map(e => e.clienteId));
-  const cols = ['Nombre', 'Apellido', 'Celular', 'Celular (solo números)', 'Email', 'Miembros de la familia', 'Tipo de evento', 'Homenajeado/a', 'Fecha del evento', 'Día', 'Mes del evento', 'Fecha de contratación', 'Invitados iniciales', 'Cubiertos finales', 'Estado', 'Primer aniversario', 'Menú', 'Barman', 'Bebida extra', 'Menús especiales', 'Centro de mesa', 'Mantel', 'Notas'];
-  const rows = evs.map(e => { const c = cli(e.clienteId), k = getCuenta(e); return [c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.familia || '', tipoEv(e), e.homenajeado || '', fmtD(e.fecha), DIAS[dow(e.fecha)], MESES[+e.fecha.slice(5, 7) - 1], fmtD(e.fechaContratacion), e.invitados ?? '', k.final.confirmado ? num(k.final.adultos) + num(k.final.ninos) + num(k.final.menores) : '', { reservado: 'Reservado', pendiente: 'Pendiente', cancelado: 'Cancelado' }[e.estado] || e.estado, fmtD(addMonths(ym(e.fecha), 12) + e.fecha.slice(7)), (e.menu || {}).menu || '', ...(() => { const sv = e.servicio || {}, a = e.ambientacion || {}; return [{ si: 'Sí', no: 'No' }[sv.barman] || '', BEBIDA_OPC[sv.bebida] || '', (sv.especiales || []).filter(x => num(x.cant)).map(x => `${x.cant} ${x.tipo}`).join(', '), a.centroMesa || '', a.mantel || '']; })(), e.notas || '']; });
-  Object.values(S.clientes).filter(c => !conEv.has(c.id)).forEach(c => rows.push([c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.familia || '', '', '', '', '', '', '', '', '', 'Sin evento', '', '', c.notas || '']));
+  const cols = ['Nombre', 'Apellido', 'Celular', 'Celular (solo números)', 'Email', 'Religión', 'Miembros de la familia', 'Tipo de evento', 'Homenajeado/a', 'Fecha del evento', 'Día', 'Mes del evento', 'Fecha de contratación', 'Invitados iniciales', 'Cubiertos finales', 'Estado', 'Primer aniversario', 'Menú', 'Barman', 'Bebida extra', 'Menús especiales', 'Centro de mesa', 'Mantel', 'Notas'];
+  const rows = evs.map(e => { const c = cli(e.clienteId), k = getCuenta(e); return [c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.religion || '', c.familia || '', tipoEv(e), e.homenajeado || '', fmtD(e.fecha), DIAS[dow(e.fecha)], MESES[+e.fecha.slice(5, 7) - 1], fmtD(e.fechaContratacion), e.invitados ?? '', k.final.confirmado ? num(k.final.adultos) + num(k.final.ninos) + num(k.final.menores) : '', { reservado: 'Reservado', pendiente: 'Pendiente', cancelado: 'Cancelado' }[e.estado] || e.estado, fmtD(addMonths(ym(e.fecha), 12) + e.fecha.slice(7)), (e.menu || {}).menu || '', ...(() => { const sv = e.servicio || {}, a = e.ambientacion || {}; return [{ si: 'Sí', no: 'No' }[sv.barman] || '', BEBIDA_OPC[sv.bebida] || '', (sv.especiales || []).filter(x => num(x.cant)).map(x => `${x.cant} ${x.tipo}`).join(', '), a.centroMesa || '', a.mantel || '']; })(), e.notas || '']; });
+  Object.values(S.clientes).filter(c => !conEv.has(c.id)).forEach(c => { const r = [c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.religion || '', c.familia || '']; while (r.length < cols.length - 1) r.push(''); r[cols.indexOf('Estado')] = 'Sin evento'; r.push(c.notas || ''); rows.push(r); });
   download(xlsx([{ name: 'Clientes y eventos', cols, rows }]), `clientes-salon-dorado-${todayISO()}.xlsx`);
 }
 function exportarMovimientos() {
