@@ -530,7 +530,7 @@ function render() {
     aplicarTema();
   }
   const { view, args } = route();
-  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos' }[view] || view;
+  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos' }[view] || view;
   $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === navKey));
   const main = $('#main');
   const fn = VIEWS[view] || VIEWS.inicio;
@@ -847,7 +847,7 @@ VIEWS.evento = id => {
       <h1>${esc(tituloEv(e) || 'Evento')}</h1>
       <div>${badgeEstado(e)} <b>${fmtDL(e.fecha)}</b> ${dias >= 0 ? `<span class="muted">· faltan ${dias} días</span>` : '<span class="muted">· realizado</span>'}</div></div>
     <div class="actions">${c.celular ? `<a class="btn btn-wa" target="_blank" href="${waLink(c.celular)}">WhatsApp</a>` : ''}
-      <button id="edEv">Editar datos</button><button class="btn-gold" data-go="imprimir/${id}">Imprimir estado de cuenta</button></div></div>
+      <button id="edEv">Editar datos</button><button data-go="orden/${id}" title="Menú, bebidas, menús especiales y ambientación, sin precios">Hoja para cocina y organizadora</button><button class="btn-gold" data-go="imprimir/${id}">Imprimir estado de cuenta</button></div></div>
 
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h3>Cliente</h3><a href="#/cliente/${e.clienteId}">Ver ficha</a></div>
@@ -1360,6 +1360,56 @@ VIEWS.imprimir = id => {
     <div class="foot">Salón Dorado · Villa Urquiza, Ciudad Autónoma de Buenos Aires</div>
   </div>`;
 };
+/* ---------- hoja de servicio para cocina y organizadora (sin precios) ---------- */
+const ORDEN_OPTS = { cliente: true, menu: true, servicio: true, amb: true, extras: true, obs: true };
+VIEWS.orden = id => {
+  const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
+  const c = cli(e.clienteId), k = calcCuenta(e), o = ORDEN_OPTS;
+  const m = e.menu || {}, sv = e.servicio || {}, a = e.ambientacion || {};
+  const esp = (sv.especiales || []).filter(x => num(x.cant));
+  const fin = (k.c && k.c.final) || {};
+  const conFinal = fin.confirmado || num(fin.adultos) || num(fin.ninos) || num(fin.menores);
+  const fila = (t, v) => `<tr><td style="width:32%"><b>${t}</b></td><td>${v ? esc(v) : '<span style="color:#aaa">—</span>'}</td></tr>`;
+  const extras = (e.extras || []).filter(l => l.nombre);
+  const op = (k2, t) => `<label class="chk"><input type="checkbox" data-oo="${k2}" ${o[k2] ? 'checked' : ''}> ${t}</label>`;
+  return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
+    ${op('cliente', 'Datos del cliente')}${op('menu', 'Menú')}${op('servicio', 'Bebida y especiales')}${op('amb', 'Ambientación')}${op('extras', 'Adicionales')}${op('obs', 'Espacio para notas')}
+    <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+  <div class="print-doc">
+    <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.2rem;font-family:Georgia,serif">Hoja de servicio</div><div>Cocina y organización</div><div style="color:#777">Impreso el ${fmtD(todayISO())}</div></div></div>
+    <table style="margin-bottom:6px"><tbody>
+      ${fila('Evento', tituloEv(e))}
+      <tr><td style="width:32%"><b>Fecha</b></td><td><b style="font-size:1.1em">${fmtDL(e.fecha)}</b></td></tr>
+      ${o.cliente ? fila('Cliente', nombreCli(c) + (c.celular ? ' · ' + fmtTel(c.celular) : '')) : ''}
+      ${conFinal ? `<tr><td><b>Invitados (número final)</b></td><td><b>${fmtN(num(fin.adultos))}</b> adultos · <b>${fmtN(num(fin.ninos))}</b> niños de 4 a 10 · <b>${fmtN(num(fin.menores))}</b> menores de 4 · total <b>${fmtN(num(fin.adultos) + num(fin.ninos) + num(fin.menores))}</b>${fin.confirmado ? '' : ' <span style="color:#a3352e">(sin confirmar)</span>'}</td></tr>`
+      : fila('Invitados (estimado)', e.invitados ? fmtN(e.invitados) + ' · todavía sin número final' : '')}
+    </tbody></table>
+
+    ${o.menu ? `<h2>Menú</h2><table><tbody>
+      ${fila('Menú', m.menu)}${fila('Principal adultos', m.principalAdultos)}${fila('Guarnición adultos', m.guarnicionAdultos)}${fila('Principal niños', m.principalNinos)}${fila('Guarnición niños', m.guarnicionNinos)}
+      ${m.notas ? fila('Notas del menú', m.notas) : ''}</tbody></table>` : ''}
+
+    ${o.servicio ? `<h2>Menús especiales</h2>${esp.length ? `<table><thead><tr><th class="num" style="width:12%">Cant.</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>
+      ${esp.map(x => `<tr><td class="num"><b>${fmtN(x.cant)}</b></td><td>${esc(x.tipo)}</td><td>${esc(x.detalle || '')}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td class="num">${fmtN(sum(esp, x => x.cant))}</td><td colspan="2">Total de menús especiales</td></tr></tfoot></table>` : '<p>No hay menús especiales.</p>'}
+    <h2>Bebida</h2><table><tbody>
+      ${fila('Barman', { si: 'Sí, agregan barman', no: 'No' }[sv.barman])}
+      ${fila('Bebida extra', (BEBIDA_OPC[sv.bebida] || '') + (sv.bebidaNota ? ' · ' + sv.bebidaNota : ''))}
+      ${sv.notas ? fila('Notas', sv.notas) : ''}</tbody></table>` : ''}
+
+    ${o.amb ? `<h2>Ambientación</h2><table><tbody>
+      ${fila('Centro de mesa', a.centroMesa)}${fila('Mantel', a.mantel)}${a.notas ? fila('Notas', a.notas) : ''}</tbody></table>` : ''}
+
+    ${o.extras && extras.length ? `<h2>Adicionales</h2><table><thead><tr><th>Adicional</th><th class="num" style="width:10%">Cant.</th><th>Proveedor</th></tr></thead><tbody>
+      ${extras.map(l => `<tr><td>${esc(l.nombre)}</td><td class="num">${fmtN(num(l.cantidad) || 1)}</td><td>${esc([l.proveedor, l.contratado ? '' : 'falta confirmar proveedor'].filter(Boolean).join(' · '))}</td></tr>`).join('')}
+      </tbody></table>` : ''}
+
+    ${e.notas && o.cliente ? `<h2>Notas del evento</h2><p>${esc(e.notas)}</p>` : ''}
+    ${o.obs ? `<h2>Observaciones</h2><div style="height:120px;border:1px solid #ddd;border-radius:6px"></div>` : ''}
+    <div class="foot">Salón Dorado · Villa Urquiza, Ciudad Autónoma de Buenos Aires</div>
+  </div>`;
+};
+VIEWS.orden.after = () => { $$('[data-oo]').forEach(i => i.onchange = () => { ORDEN_OPTS[i.dataset.oo] = i.checked; render(); }); };
 VIEWS.imprimir.after = () => { $$('[data-po]').forEach(i => i.onchange = () => { PRINT_OPTS[i.dataset.po] = i.checked; render(); }); };
 
 /* ---------- EXCEL (.xlsx sin librerías) ---------- */
