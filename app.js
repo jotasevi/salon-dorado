@@ -1403,14 +1403,17 @@ VIEWS.config.after = () => {
 /* ====== impresión, Excel, demo e inicio ====== */
 
 /* ---------- IMPRESIÓN (hoja en blanco, sin costos) ---------- */
-let PRINT_OPTS = { cub: true, ext: true, mes: false };
+let PRINT_OPTS = { cub: true, ext: true, mes: false, sal: true };   // sal: saldo de cubiertos en pesos (a valor de hoy, cambia con el IPC)
 VIEWS.imprimir = id => {
   const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
   const c = cli(e.clienteId), k = calcCuenta(e), x = calcExtras(e), o = PRINT_OPTS;
-  const tot = (o.cub ? k.montoPendiente + k.ivaPendiente : 0) + (o.ext ? Math.max(0, x.saldo) : 0);
+  const salCub = o.cub && o.sal;   // sin saldo: los cubiertos pendientes se muestran en cantidad, no en pesos
+  const tot = (salCub ? k.montoPendiente + k.ivaPendiente : 0) + (o.ext ? Math.max(0, x.saldo) : 0);
+  const cubPend = o.cub && !o.sal && k.pendientes > 0;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
     <label class="chk"><input type="checkbox" data-po="cub" ${o.cub ? 'checked' : ''}> Cubiertos</label>
     <label class="chk"><input type="checkbox" data-po="mes" ${o.mes ? 'checked' : ''}> Detalle mes a mes</label>
+    <label class="chk" title="Destildalo para no mostrar cuánto deben en pesos de cubiertos (se calcula a valor de hoy y cambia con el IPC)"><input type="checkbox" data-po="sal" ${o.sal ? 'checked' : ''}> Saldo en pesos</label>
     <label class="chk"><input type="checkbox" data-po="ext" ${o.ext ? 'checked' : ''}> Extras</label>
     <button class="btn-primary" onclick="window.print()">Imprimir</button></div>
   <div class="print-doc">
@@ -1433,8 +1436,9 @@ VIEWS.imprimir = id => {
     ${o.mes ? `<h3 style="margin-top:12px">Valor del cubierto mes a mes</h3><table><thead><tr><th>Mes</th><th class="num">Ajuste</th><th class="num">Valor cubierto</th></tr></thead><tbody>${k.meses.filter(r => r.mes <= ym(todayISO()) || r.i === 0).map(r => `<tr><td>${fmtYM(r.mes)}</td><td class="num">${r.i === 0 ? 'Valor inicial' : r.aplica ? (r.pct !== null ? fmtP(r.pct) : 'pendiente') : 'Sin ajuste'}</td><td class="num">${fmt$(r.valor)}</td></tr>`).join('')}</tbody></table>` : ''}
     <div class="tot" style="margin-top:10px"><table><tbody>
       ${k.credito > 0 && k.pendientes > 0 ? `<tr><td>Saldo a favor en pesos</td><td class="num">${fmt$(k.credito)}</td></tr>` : ''}
-      <tr><td><b>Pendiente cubiertos (valor de hoy)</b></td><td class="num"><b>${fmt$(k.montoPendiente)}</b></td></tr>
-      ${k.ivaOn ? `<tr><td>IVA ${fmtP(k.ivaPct)} (total ${fmt$(k.ivaTotal)}, abonado ${fmt$(k.montoIva)})</td><td class="num">${fmt$(k.ivaPendiente)}</td></tr>` : ''}
+      ${o.sal ? `<tr><td><b>Pendiente cubiertos (valor de hoy)</b></td><td class="num"><b>${fmt$(k.montoPendiente)}</b></td></tr>
+      ${k.ivaOn ? `<tr><td>IVA ${fmtP(k.ivaPct)} (total ${fmt$(k.ivaTotal)}, abonado ${fmt$(k.montoIva)})</td><td class="num">${fmt$(k.ivaPendiente)}</td></tr>` : ''}`
+      : `<tr><td><b>Cubiertos pendientes</b></td><td class="num"><b>${fmtN(Math.max(0, k.pendientes))}</b></td></tr>`}
       ${k.aFavor > 0 && k.pendientes <= 0 ? `<tr><td>A favor del cliente</td><td class="num">${fmt$(k.aFavor)}</td></tr>` : ''}
     </tbody></table></div>
     ${k.pendientes > 0 ? `<p style="color:#666;font-size:11px">Los cubiertos pendientes se actualizan según las condiciones contratadas. Los cubiertos abonados quedan congelados.${k.reservaSemana && daysBetween(todayISO(), e.fecha) > 7 && k.antesSemana > 0 ? ` Se abonan ${fmtN(k.antesSemana)} cubiertos antes de la semana del evento y ${fmtN(Math.min(k.pendientes, k.reservaSemana))} durante esa semana.` : ''}</p>` : ''}` : ''}
@@ -1443,7 +1447,8 @@ VIEWS.imprimir = id => {
       ${x.lines.map(l => `<tr><td>${esc(l.nombre)}</td><td class="num">${l.cant}</td><td class="num">${l.regalo ? 'Obsequio' : fmt$(l.total)}</td><td class="num">${l.pagado ? fmt$(l.pagado) : '—'}</td><td class="num">${l.regalo ? '—' : fmt$(l.saldo)}</td></tr>`).join('')}
       </tbody><tfoot><tr><td colspan="2">Total adicionales</td><td class="num">${fmt$(x.total)}</td><td class="num">${fmt$(x.pagado)}</td><td class="num">${fmt$(x.saldo)}</td></tr></tfoot></table>` : ''}
 
-    <div class="tot" style="margin-top:16px"><table><tbody><tr><td style="font-size:1.05rem"><b>Total pendiente</b></td><td class="num" style="font-size:1.05rem"><b>${fmt$(tot)}</b></td></tr></tbody></table></div>
+    ${o.sal || !o.cub || (o.ext && x.saldo > 0) ? `<div class="tot" style="margin-top:16px"><table><tbody><tr><td style="font-size:1.05rem"><b>${cubPend ? 'Total pendiente en pesos (adicionales)' : 'Total pendiente'}</b></td><td class="num" style="font-size:1.05rem"><b>${fmt$(tot)}</b></td></tr>
+      ${cubPend ? `<tr><td>Más cubiertos pendientes</td><td class="num">${fmtN(k.pendientes)}</td></tr>` : ''}</tbody></table></div>` : ''}
     <div class="foot">Salón Dorado · Villa Urquiza, Ciudad Autónoma de Buenos Aires</div>
   </div>`;
 };
