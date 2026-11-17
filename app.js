@@ -1613,7 +1613,7 @@ VIEWS.contrato = id => {
     : t === 'num' ? F.text(k, l, d[k], 'inputmode="numeric"') : t === 'text' ? F.text(k, l, d[k])
     : `<label class="f"><span>${l}</span><input type="${t}" name="${k}" value="${esc(d[k] || '')}"></label>`;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
-    <button class="btn-primary" id="ctPrint">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
   <div class="panel no-print"><div class="panel-h"><h3>Datos que se completan en el contrato</h3><button class="btn-sm" id="ctAuto">Volver a completar con los datos de la app</button></div>
     <p class="small muted" style="margin-top:0">Se completan solos con los datos del evento. Podés corregir cualquiera; si dejás uno vacío, sale la línea punteada para escribirlo a mano. Imprimí 2 copias: una para el cliente y otra para el salón.</p>
     <form id="ctForm" class="fgrid" onsubmit="return false">${CT_CAMPOS.map(campo).join('')}</form>
@@ -1641,8 +1641,8 @@ VIEWS.contrato.after = id => {
     CT_DRAFT = null; DB.save('eventos', E);
   };
   $('#ctSave').onclick = () => { guardar(); toast('Datos del contrato guardados.'); };
-  // imprime en el mismo clic (Safari y la app instalada bloquean la impresión si se demora)
-  $('#ctPrint').onclick = () => { try { guardar(); } catch (err) { console.error(err); } window.print(); };
+  // imprime igual que las otras hojas (botón con window.print directo); los datos se guardan después de imprimir
+  window.onafterprint = () => { if (CT_DRAFT && CT_DRAFT.id === id && location.hash.startsWith('#/contrato/')) { try { guardar(); } catch (err) { console.error(err); } } };
   $('#ctAuto').onclick = () => { CT_DRAFT = { id, datos: contratoAuto(ev(id)) }; render(); $('#ctMsg').textContent = 'Cambios sin guardar'; };
   $('#ctLinkSave').onclick = () => {
     const u = $('#ctLink').value.trim();
