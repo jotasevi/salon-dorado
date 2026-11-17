@@ -530,6 +530,37 @@ function nombreUsuario() {
   return u.displayName || '';
 }
 
+/* ---------- impresión aislada: copia solo la hoja a un iframe y se imprime eso (Safari se traba con la app entera) ---------- */
+const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato' };
+function prepararImpresion() {
+  const { view, args } = route();
+  const doc = $('#main .print-doc');
+  let f = document.getElementById('printFrame');
+  if (!HOJAS[view] || !doc) { if (f) f.remove(); return; }
+  const e = ev(args[0]);
+  const titulo = `${HOJAS[view]}${e ? ' - ' + tituloEv(e) : ''}`.replace(/[\/\\:*?"<>|]/g, '-');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><base href="${esc(location.href.split('#')[0])}"><title>${esc(titulo)}</title>
+    <link rel="stylesheet" href="styles.css"><style>@page{size:A4;margin:12mm}html,body{background:#fff!important;margin:0;padding:0}.print-doc{border:none!important;padding:0!important;max-width:none!important;margin:0!important}</style></head>
+    <body>${doc.outerHTML}</body></html>`;
+  if (f && f.dataset.html === html) return;
+  if (!f) {
+    f = document.createElement('iframe'); f.id = 'printFrame'; f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+    f.style.cssText = 'position:absolute;left:-10000px;top:0;width:800px;height:1100px;border:0';
+    document.body.appendChild(f);
+  }
+  f.dataset.html = html; f.dataset.ok = '';
+  f.onload = () => { f.dataset.ok = '1'; };
+  f.srcdoc = html;
+}
+function imprimirHoja() {
+  const f = document.getElementById('printFrame');
+  if (f && f.dataset.ok && f.contentWindow) {
+    try { f.contentWindow.focus(); f.contentWindow.print(); return; } catch (err) { console.error(err); }
+  }
+  window.print();
+}
+window.imprimirHoja = imprimirHoja;   // app.js es un módulo: los onclick del HTML necesitan verla en window
+
 function render() {
   if (MODAL_OPEN) { PENDING_RENDER = true; return; }
   PENDING_RENDER = false;
@@ -555,6 +586,7 @@ function render() {
   main.innerHTML = (DB.mode === 'demo' ? `<div class="demo-banner no-print"><b>Modo demostración:</b> los datos son de ejemplo y se guardan solo en este navegador. En la app instalada se entra con usuario y clave, todo se guarda en la nube, y funcionan la impresión y la descarga del Excel. <a href="#" id="resetDemo">Restablecer datos de ejemplo</a></div>` : '') + fn(...args);
   const rd = $('#resetDemo'); if (rd) rd.onclick = e => { e.preventDefault(); confirmar('¿Volver a los datos de ejemplo? Se pierde lo cargado en la demo.', () => DB.resetDemo()); };
   if (fn.after) fn.after(...args);
+  prepararImpresion();
   if (render._last === location.hash) window.scrollTo(0, y); else window.scrollTo(0, 0);
   render._last = location.hash;
 }
@@ -1498,7 +1530,7 @@ VIEWS.timing = id => {
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
     <label class="chk"><input type="checkbox" data-to="notas" ${o.notas ? 'checked' : ''}> Columna para anotar a mano</label>
     <button id="edT2">Editar horarios</button>
-    <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" onclick="imprimirHoja()">Imprimir / Guardar PDF</button></div>
   <div class="print-doc timing-doc">
     <div class="center"><img src="${LOGO}" alt="Salón Dorado" style="width:170px"></div>
     <div class="center" style="font-size:1.6rem;margin-top:14px">Timing</div>
@@ -1613,7 +1645,7 @@ VIEWS.contrato = id => {
     : t === 'num' ? F.text(k, l, d[k], 'inputmode="numeric"') : t === 'text' ? F.text(k, l, d[k])
     : `<label class="f"><span>${l}</span><input type="${t}" name="${k}" value="${esc(d[k] || '')}"></label>`;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
-    <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" id="ctPrint">Imprimir / Guardar PDF</button></div>
   <div class="panel no-print"><div class="panel-h"><h3>Datos que se completan en el contrato</h3><button class="btn-sm" id="ctAuto">Volver a completar con los datos de la app</button></div>
     <p class="small muted" style="margin-top:0">Se completan solos con los datos del evento. Podés corregir cualquiera; si dejás uno vacío, sale la línea punteada para escribirlo a mano. Imprimí 2 copias: una para el cliente y otra para el salón.</p>
     <form id="ctForm" class="fgrid" onsubmit="return false">${CT_CAMPOS.map(campo).join('')}</form>
@@ -1630,7 +1662,8 @@ VIEWS.contrato.after = id => {
   const e = ev(id); if (!e) return;
   const form = $('#ctForm');
   const leer = () => { const r = readForm(form), d = {}; CT_CAMPOS.forEach(([k]) => d[k] = String(r[k] ?? '').trim()); return d; };
-  const upd = () => { CT_DRAFT = { id, datos: leer() }; $('#ctDoc').innerHTML = contratoDoc(ev(id), CT_DRAFT.datos); $('#ctMsg').textContent = 'Cambios sin guardar'; };
+  let tPrep = 0;
+  const upd = () => { CT_DRAFT = { id, datos: leer() }; $('#ctDoc').innerHTML = contratoDoc(ev(id), CT_DRAFT.datos); $('#ctMsg').textContent = 'Cambios sin guardar'; clearTimeout(tPrep); tPrep = setTimeout(prepararImpresion, 250); };
   form.addEventListener('input', upd); form.addEventListener('change', upd);
   const guardar = () => {
     const d = leer(), E = clean(ev(id)); E.contrato = d;
@@ -1641,8 +1674,12 @@ VIEWS.contrato.after = id => {
     CT_DRAFT = null; DB.save('eventos', E);
   };
   $('#ctSave').onclick = () => { guardar(); toast('Datos del contrato guardados.'); };
-  // imprime igual que las otras hojas (botón con window.print directo); los datos se guardan después de imprimir
-  window.onafterprint = () => { if (CT_DRAFT && CT_DRAFT.id === id && location.hash.startsWith('#/contrato/')) { try { guardar(); } catch (err) { console.error(err); } } };
+  $('#ctPrint').onclick = () => {
+    clearTimeout(tPrep);
+    const pend = !!(CT_DRAFT && CT_DRAFT.id === id);
+    if (pend) { try { guardar(); } catch (err) { console.error(err); } }
+    prepararImpresion(); imprimirHoja();
+  };
   $('#ctAuto').onclick = () => { CT_DRAFT = { id, datos: contratoAuto(ev(id)) }; render(); $('#ctMsg').textContent = 'Cambios sin guardar'; };
   $('#ctLinkSave').onclick = () => {
     const u = $('#ctLink').value.trim();
@@ -1666,7 +1703,7 @@ VIEWS.orden = id => {
   const op = (k2, t) => `<label class="chk"><input type="checkbox" data-oo="${k2}" ${o[k2] ? 'checked' : ''}> ${t}</label>`;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
     ${op('cliente', 'Datos del cliente')}${op('menu', 'Menú')}${op('servicio', 'Bebida y especiales')}${op('amb', 'Ambientación')}${op('timing', 'Timing')}${op('extras', 'Adicionales')}${op('obs', 'Espacio para notas')}
-    <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" onclick="imprimirHoja()">Imprimir / Guardar PDF</button></div>
   <div class="print-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.2rem;font-family:Georgia,serif">Hoja de servicio</div><div>Cocina y organización</div><div style="color:#777">Impreso el ${fmtD(todayISO())}</div></div></div>
     <table style="margin-bottom:6px"><tbody>
