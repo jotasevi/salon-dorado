@@ -62,9 +62,11 @@ const DEFAULT_CONFIG = {
     menus: ['Menú 1 Fiesta XV', 'Menú 1 Bar/Bat', 'Menú sin buffet'],
     principalAdultos: ['Carne', 'Pollo', 'Bondiola', 'Salmón'],
     guarnicionAdultos: ['Papas rústicas', 'Milhojas de papa'],
-    principalNinos: ['Suprema de pollo', 'Chicken fingers'],
+    principalNinos: ['Suprema de pollo', 'Chicken fingers', 'Milanesa de ternera', 'Muzzarellas a la milanesa', 'Hamburguesa con cheddar'],
     guarnicionNinos: ['Papas noisette', 'Papas bastón', 'Papas rejilla'],
     medios: ['Transferencia', 'Efectivo', 'Dólares (anotado en pesos)', 'Otro'],
+    especiales: ['Celíaco (sin TACC)', 'Vegetariano', 'Vegano', 'Kosher (comprado)', 'Lácteo', 'Sin sal', 'Diabético (sin azúcar)', 'Sin lactosa', 'Intolerancia / alergia'],
+    centrosMesa: [],
     egresos: ['Alquiler mensual', 'Electricidad', 'ABL', 'Gas', 'Empleados', 'Carnicería', 'Mayorista', 'Pescadería', 'Verdulería', 'Caja chica', 'Arreglos y mantenimiento', 'Remodelaciones', 'Quesos', 'Hielo', 'Congelados', 'Comisiones Juan', 'Pauta', 'Contenido', 'Otros'],
   },
   minimos: { 5: 120 /*sáb*/, 4: 100 /*vie*/, otro: 100 },
@@ -77,7 +79,7 @@ const DEFAULT_CONFIG = {
 };
 const LISTA_LABELS = {
   tipos: 'Tipos de evento', menus: 'Menús', principalAdultos: 'Plato principal adultos', guarnicionAdultos: 'Guarnición adultos',
-  principalNinos: 'Plato principal niños', guarnicionNinos: 'Guarnición niños', medios: 'Medios de pago', egresos: 'Categorías de egresos',
+  principalNinos: 'Plato principal niños', guarnicionNinos: 'Guarnición niños', medios: 'Medios de pago', especiales: 'Menús especiales', centrosMesa: 'Centros de mesa', egresos: 'Categorías de egresos',
 };
 // Catálogo inicial de extras (lista de precios enviada por Juan, nov 2026). Costos a completar.
 const EXTRAS_INICIALES = [
@@ -110,6 +112,16 @@ const CONF = () => {
   return { ...DEFAULT_CONFIG, ...c, listas: { ...DEFAULT_CONFIG.listas, ...(c.listas || {}) }, minimos: { ...DEFAULT_CONFIG.minimos, ...(c.minimos || {}) }, iva: { ...DEFAULT_CONFIG.iva, ...(c.iva || {}) } };
 };
 const clean = o => JSON.parse(JSON.stringify(o));
+// agrega opciones nuevas a listas que ya estaban guardadas (una sola vez por migración)
+const MIGRACIONES = { ninos2026: { principalNinos: ['Milanesa de ternera', 'Muzzarellas a la milanesa', 'Hamburguesa con cheddar'] } };
+function migrarConfig() {
+  const g = S.config.general; if (!g) return;
+  const hechas = g.migraciones || [], pend = Object.keys(MIGRACIONES).filter(k => !hechas.includes(k));
+  if (!pend.length) return;
+  const listas = { ...(g.listas || {}) };
+  pend.forEach(k => Object.entries(MIGRACIONES[k]).forEach(([lista, items]) => { if (listas[lista]) listas[lista] = [...listas[lista], ...items.filter(i => !listas[lista].includes(i))]; }));
+  DB.save('config', { ...g, listas, migraciones: [...hechas, ...pend] });
+}
 
 const DB = {
   mode: FIREBASE_ON ? 'firebase' : 'demo',
@@ -123,6 +135,7 @@ const DB = {
       try { raw = localStorage.getItem(this.LS_KEY); } catch (e) { }
       if (raw) { try { Object.assign(S, JSON.parse(raw)); COLS.forEach(c => S[c] = S[c] || {}); } catch (e) { } }
       else seedDemo();
+      migrarConfig();
       return;
     }
     const v = '10.12.2', base = `https://www.gstatic.com/firebasejs/${v}/`;
@@ -163,7 +176,8 @@ const DB = {
   },
   afterFirstLoad() {
     // primera vez: carga el catálogo de extras y la configuración
-    if (!S.config.general) this.save('config', { ...clean(DEFAULT_CONFIG), id: 'general' });
+    if (!S.config.general) this.save('config', { ...clean(DEFAULT_CONFIG), id: 'general', migraciones: Object.keys(MIGRACIONES) });
+    else migrarConfig();
     if (!Object.keys(S.extrasCat).length && !(S.config.general || {}).catalogoCargado) {
       EXTRAS_INICIALES.forEach(([grupo, nombre, precio, desc], i) => this.save('extrasCat', { grupo, nombre, precio, costo: null, desc, orden: i, activo: true }, true));
       this.save('config', { ...(S.config.general || clean(DEFAULT_CONFIG)), id: 'general', catalogoCargado: true });
@@ -338,6 +352,36 @@ function calcExtras(e) {
     total: sum(lines, l => l.total), pagado: sum(lines, l => l.pagado), saldo: sum(lines, l => l.saldo),
     costo: sum(lines, l => l.costoTotal), sinContratar: lines.filter(l => !l.contratado).length,
   };
+}
+
+/* medios de pago: un pago puede combinar dos medios (p.medios = [{medio, monto}, {medio, monto}]) */
+const medioTxt = p => (p.medios && p.medios.length > 1) ? p.medios.map(x => `${x.medio || '—'} ${fmt$(x.monto)}`).join(' + ') : (p.medio || '');
+function camposMedios(p, montoLabel) {
+  const L = CONF().listas.medios, comb = !!(p.medios && p.medios.length > 1);
+  const lista = v => L.includes(v) || !v ? L : [...L, v];
+  const m1 = comb ? p.medios[0] : { medio: p.medio, monto: p.monto };
+  const m2 = comb ? p.medios[1] : { medio: L.find(x => x !== m1.medio) || '', monto: '' };
+  return F.chk('combinar', 'Combinar dos medios de pago (ej.: parte en efectivo y parte por transferencia)', comb, 'full id="pComb"') +
+    `<label class="f"><span id="pMontoLbl" data-l="${esc(montoLabel)}">${montoLabel}</span><input name="monto" id="pMonto" inputmode="decimal" value="${m1.monto === null || m1.monto === undefined ? '' : esc(m1.monto)}"></label>` +
+    F.sel('medio', 'Medio', lista(m1.medio), m1.medio) +
+    `<div class="full fgrid" id="comb2" style="grid-template-columns:1fr 1fr">` +
+    F.num('monto2', 'Monto con el segundo medio (ARS)', m2.monto, 'id="pMonto2"') + F.sel('medio2', 'Segundo medio', lista(m2.medio), m2.medio) +
+    `<div class="full" id="combTot"></div></div>`;
+}
+function bindMedios(form) {
+  const u = () => {
+    const on = $('#pComb', form).checked, lbl = $('#pMontoLbl', form);
+    $('#comb2', form).style.display = on ? '' : 'none';
+    lbl.textContent = on ? 'Monto con el primer medio (ARS)' : lbl.dataset.l;
+    if (on) { const d = readForm(form); $('#combTot', form).innerHTML = `<div class="alert info">Total del pago: <b>${fmt$(num(d.monto) + num(d.monto2))}</b> = ${esc(d.medio)} ${fmt$(num(d.monto))} + ${esc(d.medio2)} ${fmt$(num(d.monto2))}</div>`; }
+  };
+  form.addEventListener('input', u); form.addEventListener('change', u); u();
+}
+// arma { monto total, medio, medios } a partir del formulario
+function leerMedios(d) {
+  if (!d.combinar || !num(d.monto2)) return { monto: num(d.monto), medio: d.medio, medios: null };
+  const medios = [{ medio: d.medio, monto: num(d.monto) }, { medio: d.medio2, monto: num(d.monto2) }];
+  return { monto: medios[0].monto + medios[1].monto, medio: medios.map(x => x.medio).join(' + '), medios };
 }
 
 /* resumen de un evento para listados */
@@ -700,6 +744,18 @@ VIEWS.evento = id => {
       <dt>Principal niños</dt><dd>${esc(menu.principalNinos || '—')}</dd><dt>Guarnición niños</dt><dd>${esc(menu.guarnicionNinos || '—')}</dd>${menu.notas ? `<dt>Notas</dt><dd>${esc(menu.notas)}</dd>` : ''}</dl></div>
   </div>
 
+  <div class="grid2">
+    <div class="panel"><div class="panel-h"><h3>Bebida y menús especiales</h3><button class="btn-sm" id="edServ">Editar</button></div>
+      ${(() => { const sv = e.servicio || {}, esp = (sv.especiales || []).filter(x => num(x.cant)), tot = sum(esp, x => x.cant);
+        return `<dl class="kv"><dt>Barman</dt><dd>${{ si: 'Sí, agregan barman', no: 'No' }[sv.barman] || '—'}</dd>
+        <dt>Bebida extra</dt><dd>${esc(BEBIDA_OPC[sv.bebida] || '—')}${sv.bebidaNota ? `<div class="small muted">${esc(sv.bebidaNota)}</div>` : ''}</dd>
+        <dt>Menús especiales</dt><dd>${esp.length ? `<b>${fmtN(tot)}</b> en total${esp.map(x => `<div>${fmtN(x.cant)} × ${esc(x.tipo)}${x.detalle ? ` <span class="small muted">(${esc(x.detalle)})</span>` : ''}</div>`).join('')}` : (sv.barman || sv.bebida ? 'No tienen' : '—')}</dd>
+        ${sv.notas ? `<dt>Notas</dt><dd>${esc(sv.notas)}</dd>` : ''}</dl>`; })()}</div>
+    <div class="panel"><div class="panel-h"><h3>Ambientación</h3><button class="btn-sm" id="edAmb">Editar</button></div>
+      ${(() => { const a = e.ambientacion || {};
+        return `<dl class="kv"><dt>Centro de mesa</dt><dd>${esc(a.centroMesa || '—')}</dd><dt>Mantel</dt><dd>${esc(a.mantel || '—')}</dd>${a.notas ? `<dt>Notas</dt><dd>${esc(a.notas)}</dd>` : ''}</dl>`; })()}</div>
+  </div>
+
   <div class="panel"><div class="panel-h"><h2>Cubiertos</h2><div class="actions" style="display:flex;gap:6px;flex-wrap:wrap">
       <button id="condic">Condiciones</button><button id="final">Número final de invitados</button><button class="btn-primary" id="pago">+ Registrar pago</button></div></div>
     ${k.sinValor ? '<div class="alert warn">Falta cargar el valor del cubierto. Tocá <b>Condiciones</b>.</div>' : ''}
@@ -717,7 +773,7 @@ VIEWS.evento = id => {
 
     <h3>Pagos</h3>
     ${k.pagos.length ? `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Medio</th><th class="num">Monto</th><th class="num">Valor cubierto</th><th class="num">Cubiertos</th><th class="num">Acumulado</th><th class="num">Saldo a favor</th><th></th></tr></thead><tbody>
-      ${k.pagos.map(p => `<tr><td>${fmtD(p.fecha)}</td><td>${p.tipo === 'iva' ? 'IVA' : p.sena ? 'Seña' : 'Pago'}${p.nota ? `<div class="small muted">${esc(p.nota)}</div>` : ''}</td><td class="small">${esc(p.medio || '')}</td><td class="num">${fmt$(p.monto)}</td><td class="num">${p.tipo === 'iva' ? '' : fmt$(p.valor)}</td><td class="num">${p.tipo === 'iva' ? '' : fmtN(p.cubiertos)}</td><td class="num">${p.tipo === 'iva' ? '' : fmtN(p.acum)}</td><td class="num">${p.tipo === 'iva' ? '' : fmt$(p.credito)}</td><td class="right"><button class="btn-sm" data-pago="${p.id}">Editar</button></td></tr>`).join('')}
+      ${k.pagos.map(p => `<tr><td>${fmtD(p.fecha)}</td><td>${p.tipo === 'iva' ? 'IVA' : p.sena ? 'Seña' : 'Pago'}${p.nota ? `<div class="small muted">${esc(p.nota)}</div>` : ''}</td><td class="small">${esc(medioTxt(p))}</td><td class="num">${fmt$(p.monto)}</td><td class="num">${p.tipo === 'iva' ? '' : fmt$(p.valor)}</td><td class="num">${p.tipo === 'iva' ? '' : fmtN(p.cubiertos)}</td><td class="num">${p.tipo === 'iva' ? '' : fmtN(p.acum)}</td><td class="num">${p.tipo === 'iva' ? '' : fmt$(p.credito)}</td><td class="right"><button class="btn-sm" data-pago="${p.id}">Editar</button></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Todavía no hay pagos. El primero suele ser la seña (' + CONF().sena + ' cubiertos).</p>'}
 
     <h3 style="margin-top:18px">Cuadro mes a mes</h3>
@@ -756,6 +812,8 @@ VIEWS.evento.after = id => {
   const e = ev(id); if (!e) return;
   $('#edEv').onclick = () => formEvento(id);
   $('#edMenu').onclick = () => formMenu(id);
+  $('#edServ').onclick = () => formServicio(id);
+  $('#edAmb').onclick = () => formAmbientacion(id);
   $('#condic').onclick = () => formCondiciones(id);
   $('#final').onclick = () => formFinal(id);
   $('#pago').onclick = () => formPago(id);
@@ -775,8 +833,44 @@ function formMenu(id) {
   const s = (n, l, list) => F.sel(n, l, opts(list.includes(m[n]) || !m[n] ? list : [...list, m[n]]), m[n]);
   modal({
     title: 'Menú seleccionado',
-    body: s('menu', 'Menú', L.menus) + '<div></div>' + s('principalAdultos', 'Plato principal adultos', L.principalAdultos) + s('guarnicionAdultos', 'Guarnición adultos', L.guarnicionAdultos) + s('principalNinos', 'Plato principal niños', L.principalNinos) + s('guarnicionNinos', 'Guarnición niños', L.guarnicionNinos) + F.area('notas', 'Notas del menú (dietas, celíacos, kosher, etc.)', m.notas) + F.hint('Las opciones de cada lista se editan en Configuración.'),
+    body: s('menu', 'Menú', L.menus) + '<div></div>' + s('principalAdultos', 'Plato principal adultos', L.principalAdultos) + s('guarnicionAdultos', 'Guarnición adultos', L.guarnicionAdultos) + s('principalNinos', 'Plato principal niños', L.principalNinos) + s('guarnicionNinos', 'Guarnición niños', L.guarnicionNinos) + F.area('notas', 'Notas del menú', m.notas) + F.hint('Las opciones de cada lista se editan en Configuración.'),
     onSubmit: d => { DB.save('eventos', { ...clean(e), menu: d }); },
+  });
+}
+
+const BEBIDA_OPC = { no: 'No hay bebida extra', cliente: 'La traen ellos', salon: 'La provee el salón (se cobra aparte)' };
+
+function formServicio(id) {
+  const e = ev(id), sv = e.servicio || {}, L = CONF().listas;
+  const prev = {}; (sv.especiales || []).forEach(x => { prev[x.tipo] = x; });
+  const tipos = [...L.especiales, ...Object.keys(prev).filter(t => !L.especiales.includes(t))];
+  const filas = tipos.map((t, i) => `<div class="esp-row full"><span>${esc(t)}</span><input name="espc_${i}" inputmode="numeric" placeholder="0" value="${esc(prev[t] ? prev[t].cant : '')}" aria-label="Cantidad ${esc(t)}"><input name="espd_${i}" placeholder="Detalle (opcional)" value="${esc(prev[t] ? prev[t].detalle || '' : '')}"></div>`).join('');
+  modal({
+    title: 'Bebida y menús especiales',
+    body: F.sel('barman', 'Barman', [['', '— sin definir —'], ['si', 'Sí, agregan barman'], ['no', 'No']], sv.barman) +
+      F.sel('bebida', 'Bebida extra', [['', '— sin definir —'], ...Object.entries(BEBIDA_OPC)], sv.bebida) +
+      F.text('bebidaNota', 'Detalle de la bebida (qué traen, descorche, etc.)', sv.bebidaNota, 'full') +
+      F.sep('Menús especiales: cuántos de cada uno') + filas + '<div class="full" id="espTot"></div>' +
+      F.area('notas', 'Notas (alergias, intolerancias, a qué mesa va cada menú…)', sv.notas) +
+      F.hint('Los tipos de menú especial se editan en Configuración → Menús especiales.'),
+    onOpen: form => { const u = () => { const d = readForm(form); const t = tipos.reduce((a, _, i) => a + num(d['espc_' + i]), 0); $('#espTot', form).innerHTML = t ? `<div class="alert info">Total de menús especiales: <b>${fmtN(t)}</b></div>` : ''; }; form.oninput = u; u(); },
+    onSubmit: d => {
+      const especiales = tipos.map((t, i) => ({ tipo: t, cant: num(d['espc_' + i]), detalle: d['espd_' + i] })).filter(x => x.cant || x.detalle);
+      DB.save('eventos', { ...clean(e), servicio: { barman: d.barman, bebida: d.bebida, bebidaNota: d.bebidaNota, especiales, notas: d.notas } });
+    },
+  });
+}
+
+function formAmbientacion(id) {
+  const e = ev(id), a = e.ambientacion || {};
+  const usados = [...new Set([...CONF().listas.centrosMesa, ...Object.values(S.eventos).map(z => (z.ambientacion || {}).centroMesa).filter(Boolean)])];
+  modal({
+    title: 'Ambientación',
+    body: F.text('centroMesa', 'Centro de mesa elegido', a.centroMesa, 'full list="centrosDl" placeholder="Escribí o elegí uno de la lista"') + `<datalist id="centrosDl">${usados.map(c => `<option value="${esc(c)}">`).join('')}</datalist>` +
+      F.sel('mantel', 'Mantel', [['', '— sin definir —'], 'Blanco', 'Negro'], a.mantel) + '<div></div>' +
+      F.area('notas', 'Notas de ambientación', a.notas) +
+      F.hint('Podés cargar los centros de mesa que ofrecen en Configuración → Centros de mesa para elegirlos de la lista.'),
+    onSubmit: d => { DB.save('eventos', { ...clean(e), ambientacion: { centroMesa: d.centroMesa, mantel: d.mantel, notas: d.notas } }); },
   });
 }
 
@@ -821,18 +915,19 @@ function formPago(id, pid) {
       `<div class="full fgrid" id="cubBox" style="grid-template-columns:1fr 1fr">` +
       F.num('valor', 'Valor del cubierto aplicado', ini, 'id="pValor"') + F.num('cubiertos', 'Cubiertos (calcula el monto)', !pid && p.sena ? CONF().sena : '', 'id="pCub"') +
       F.chk('sena', 'Es la seña', p.sena) + '</div>' +
-      F.num('monto', 'Monto recibido (ARS)', p.monto, 'id="pMonto"') + F.sel('medio', 'Medio', L.medios.includes(p.medio) || !p.medio ? L.medios : [...L.medios, p.medio], p.medio) +
+      camposMedios(p, 'Monto recibido (ARS)') +
       F.text('nota', 'Nota (ej.: USD 500 a $1.180)', p.nota, 'full') + '<div class="full" id="pPrev"></div>',
     danger: pid ? { label: 'Eliminar pago', confirm: '¿Eliminar este pago?', fn: () => updCuenta(id, k2 => { k2.pagos = k2.pagos.filter(x => x.id !== pid); }) } : null,
     onOpen: form => {
-      const fv = $('#pValor', form), fc = $('#pCub', form), fm = $('#pMonto', form);
+      const fv = $('#pValor', form), fc = $('#pCub', form), fm = $('#pMonto', form), fm2 = $('#pMonto2', form), comb = $('#pComb', form);
+      const total = () => num(fm.value) + (comb.checked ? num(fm2.value) : 0);
       let tocoValor = !!pid;
       fv.oninput = () => { tocoValor = true; };
       $('#pFecha', form).onchange = () => { if (!tocoValor) fv.value = valorDe($('#pFecha', form).value); u(); };
-      fc.oninput = () => { if (fc.value) fm.value = Math.round(num(fc.value) * num(fv.value)); };
+      fc.oninput = () => { if (fc.value) fm.value = Math.max(0, Math.round(num(fc.value) * num(fv.value)) - (comb.checked ? num(fm2.value) : 0)); };
       const u = () => {
         $('#cubBox', form).style.display = $('#pTipo', form).value === 'iva' ? 'none' : '';
-        const v = num(fv.value), m = num(fm.value);
+        const v = num(fv.value), m = total();
         if ($('#pTipo', form).value === 'iva') { $('#pPrev', form).innerHTML = `<div class="alert info">IVA pendiente: ${fmt$(k.ivaPendiente)}</div>`; return; }
         const credPrev = pid ? 0 : k.credito;
         const n = v > 0 ? Math.floor((m + credPrev) / v + 1e-9) : 0;
@@ -841,13 +936,15 @@ function formPago(id, pid) {
         $('#pPrev', form).innerHTML = (mesPend ? '<div class="alert warn">El IPC que ajusta ese mes todavía no está cargado. Si cobrás igual, revisá el valor aplicado.</div>' : '') +
           (v ? `<div class="alert info">${credPrev ? `Saldo a favor previo ${fmt$(credPrev)} + ` : ''}${fmt$(m)} ÷ ${fmt$(v)} = <b>${n} cubiertos</b> congelados${r ? ` · quedan <b>${fmt$(r)}</b> a favor` : ''}.</div>` : '');
       };
-      form.addEventListener('input', u); form.addEventListener('change', u); u();
+      bindMedios(form); form.addEventListener('input', u); form.addEventListener('change', u); u();
     },
     onSubmit: d => {
-      if (!num(d.monto)) { toast('Falta el monto.'); return false; }
+      const mp = leerMedios(d);
+      if (!mp.monto) { toast('Falta el monto.'); return false; }
       if (d.tipo !== 'iva' && !num(d.valor)) { toast('Falta el valor del cubierto.'); return false; }
       updCuenta(id, k2 => {
-        const obj = { id: pid || uid(), creado: (p && p.creado) || new Date().toISOString(), fecha: d.fecha, tipo: d.tipo, monto: num(d.monto), valor: d.tipo === 'iva' ? null : num(d.valor), sena: d.tipo === 'iva' ? false : d.sena, medio: d.medio, nota: d.nota };
+        const obj = { id: pid || uid(), creado: (p && p.creado) || new Date().toISOString(), fecha: d.fecha, tipo: d.tipo, monto: mp.monto, valor: d.tipo === 'iva' ? null : num(d.valor), sena: d.tipo === 'iva' ? false : d.sena, medio: mp.medio, nota: d.nota };
+        if (mp.medios) obj.medios = mp.medios;
         k2.pagos = pid ? k2.pagos.map(x => x.id === pid ? obj : x) : [...k2.pagos, obj];
       });
     },
@@ -858,7 +955,7 @@ function formExtra(id, xid) {
   const e = ev(id), l = xid ? (e.extras || []).find(z => z.id === xid) : { cantidad: 1 };
   const cat = Object.values(S.extrasCat).filter(z => z.activo !== false).sort((a, b) => (a.orden ?? 99) - (b.orden ?? 99));
   let pagos = clean(l.pagos || []);
-  const pagosHtml = () => pagos.length ? `<table><thead><tr><th>Fecha</th><th class="num">Monto</th><th>Medio</th><th></th></tr></thead><tbody>${pagos.map((p, i) => `<tr><td>${fmtD(p.fecha)}</td><td class="num">${fmt$(p.monto)}</td><td class="small">${esc(p.medio || '')}</td><td class="right"><button type="button" class="btn-sm btn-danger" data-delp="${i}">Quitar</button></td></tr>`).join('')}</tbody></table>` : '<span class="muted small">Sin pagos.</span>';
+  const pagosHtml = () => pagos.length ? `<table><thead><tr><th>Fecha</th><th class="num">Monto</th><th>Medio</th><th></th></tr></thead><tbody>${pagos.map((p, i) => `<tr><td>${fmtD(p.fecha)}</td><td class="num">${fmt$(p.monto)}</td><td class="small">${esc(medioTxt(p))}</td><td class="right"><button type="button" class="btn-sm btn-danger" data-delp="${i}">Quitar</button></td></tr>`).join('')}</tbody></table>` : '<span class="muted small">Sin pagos.</span>';
   modal({
     title: xid ? 'Editar extra' : 'Agregar extra',
     body: (xid ? '' : F.sel('catId', 'Del catálogo', [['', '— Extra personalizado / combo —'], ...cat.map(z => [z.id, `${z.nombre} · ${fmt$(z.precio)}`])], '', 'full id="xCat"')) +
@@ -887,8 +984,9 @@ function formPagoExtra(id, xid) {
   const e = ev(id), l = calcExtras(e).lines.find(z => z.id === xid);
   modal({
     title: 'Pago de extra: ' + esc(l.nombre),
-    body: F.date('fecha', 'Fecha', todayISO()) + F.num('monto', `Monto (saldo ${fmt$(l.saldo)})`, l.saldo > 0 ? l.saldo : '') + F.sel('medio', 'Medio', CONF().listas.medios, 'Transferencia') + F.text('nota', 'Nota', ''),
-    onSubmit: d => { if (!num(d.monto)) { toast('Falta el monto.'); return false; } const E = clean(ev(id)); const z = E.extras.find(q => q.id === xid); z.pagos = [...(z.pagos || []), { fecha: d.fecha, monto: num(d.monto), medio: d.medio, nota: d.nota }]; DB.save('eventos', E); },
+    body: F.date('fecha', 'Fecha', todayISO()) + F.text('nota', 'Nota', '') + camposMedios({ medio: 'Transferencia', monto: l.saldo > 0 ? l.saldo : '' }, `Monto (saldo ${fmt$(l.saldo)})`),
+    onOpen: form => bindMedios(form),
+    onSubmit: d => { const mp = leerMedios(d); if (!mp.monto) { toast('Falta el monto.'); return false; } const E = clean(ev(id)); const z = E.extras.find(q => q.id === xid); const pg = { fecha: d.fecha, monto: mp.monto, medio: mp.medio, nota: d.nota }; if (mp.medios) pg.medios = mp.medios; z.pagos = [...(z.pagos || []), pg]; DB.save('eventos', E); },
   });
 }
 
@@ -1167,8 +1265,8 @@ function download(blob, name) {
 function exportarExcel() {
   const evs = Object.values(S.eventos).sort((a, b) => a.fecha.localeCompare(b.fecha));
   const conEv = new Set(evs.map(e => e.clienteId));
-  const cols = ['Nombre', 'Apellido', 'Celular', 'Celular (solo números)', 'Email', 'Miembros de la familia', 'Tipo de evento', 'Homenajeado/a', 'Fecha del evento', 'Día', 'Mes del evento', 'Fecha de contratación', 'Invitados iniciales', 'Cubiertos finales', 'Estado', 'Primer aniversario', 'Menú', 'Notas'];
-  const rows = evs.map(e => { const c = cli(e.clienteId), k = getCuenta(e); return [c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.familia || '', tipoEv(e), e.homenajeado || '', fmtD(e.fecha), DIAS[dow(e.fecha)], MESES[+e.fecha.slice(5, 7) - 1], fmtD(e.fechaContratacion), e.invitados ?? '', k.final.confirmado ? num(k.final.adultos) + num(k.final.ninos) + num(k.final.menores) : '', { reservado: 'Reservado', pendiente: 'Pendiente', cancelado: 'Cancelado' }[e.estado] || e.estado, fmtD(addMonths(ym(e.fecha), 12) + e.fecha.slice(7)), (e.menu || {}).menu || '', e.notas || '']; });
+  const cols = ['Nombre', 'Apellido', 'Celular', 'Celular (solo números)', 'Email', 'Miembros de la familia', 'Tipo de evento', 'Homenajeado/a', 'Fecha del evento', 'Día', 'Mes del evento', 'Fecha de contratación', 'Invitados iniciales', 'Cubiertos finales', 'Estado', 'Primer aniversario', 'Menú', 'Barman', 'Bebida extra', 'Menús especiales', 'Centro de mesa', 'Mantel', 'Notas'];
+  const rows = evs.map(e => { const c = cli(e.clienteId), k = getCuenta(e); return [c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.familia || '', tipoEv(e), e.homenajeado || '', fmtD(e.fecha), DIAS[dow(e.fecha)], MESES[+e.fecha.slice(5, 7) - 1], fmtD(e.fechaContratacion), e.invitados ?? '', k.final.confirmado ? num(k.final.adultos) + num(k.final.ninos) + num(k.final.menores) : '', { reservado: 'Reservado', pendiente: 'Pendiente', cancelado: 'Cancelado' }[e.estado] || e.estado, fmtD(addMonths(ym(e.fecha), 12) + e.fecha.slice(7)), (e.menu || {}).menu || '', ...(() => { const sv = e.servicio || {}, a = e.ambientacion || {}; return [{ si: 'Sí', no: 'No' }[sv.barman] || '', BEBIDA_OPC[sv.bebida] || '', (sv.especiales || []).filter(x => num(x.cant)).map(x => `${x.cant} ${x.tipo}`).join(', '), a.centroMesa || '', a.mantel || '']; })(), e.notas || '']; });
   Object.values(S.clientes).filter(c => !conEv.has(c.id)).forEach(c => rows.push([c.nombre || '', c.apellido || '', fmtTel(c.celular), c.celular || '', c.email || '', c.familia || '', '', '', '', '', '', '', '', '', 'Sin evento', '', '', c.notas || '']));
   download(xlsx([{ name: 'Clientes y eventos', cols, rows }]), `clientes-salon-dorado-${todayISO()}.xlsx`);
 }
@@ -1176,8 +1274,8 @@ function exportarMovimientos() {
   const pagos = [];
   Object.values(S.eventos).forEach(e => {
     const c = nombreCli(cli(e.clienteId)), k = calcCuenta(e);
-    k.pagos.forEach(p => pagos.push([fmtD(p.fecha), c, fmtD(e.fecha), p.tipo === 'iva' ? 'IVA' : p.sena ? 'Seña cubiertos' : 'Cubiertos', p.medio || '', num(p.monto), p.tipo === 'iva' ? '' : num(p.valor), p.tipo === 'iva' ? '' : p.cubiertos, p.nota || '']));
-    (e.extras || []).forEach(l => (l.pagos || []).forEach(p => pagos.push([fmtD(p.fecha), c, fmtD(e.fecha), 'Extra: ' + l.nombre, p.medio || '', num(p.monto), '', '', p.nota || ''])));
+    k.pagos.forEach(p => pagos.push([fmtD(p.fecha), c, fmtD(e.fecha), p.tipo === 'iva' ? 'IVA' : p.sena ? 'Seña cubiertos' : 'Cubiertos', medioTxt(p), num(p.monto), p.tipo === 'iva' ? '' : num(p.valor), p.tipo === 'iva' ? '' : p.cubiertos, p.nota || '']));
+    (e.extras || []).forEach(l => (l.pagos || []).forEach(p => pagos.push([fmtD(p.fecha), c, fmtD(e.fecha), 'Extra: ' + l.nombre, medioTxt(p), num(p.monto), '', '', p.nota || ''])));
   });
   pagos.sort((a, b) => a[0].split('/').reverse().join('').localeCompare(b[0].split('/').reverse().join('')));
   const eg = Object.values(S.egresos).sort((a, b) => a.fecha.localeCompare(b.fecha)).map(g => [fmtD(g.fecha), g.categoria, g.detalle || '', num(g.monto)]);
