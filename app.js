@@ -2760,7 +2760,7 @@ VIEWS.plano = id => {
         <button class="btn-sm" id="plDup" ${sel.t === 'rect' && rectUsadas(items) + 1 > maxRect() || sel.t === 'cuad' && rectUsadas(items) + 2 > maxRect() ? 'disabled title="No quedan rectangulares libres"' : ''}>Duplicar</button><button class="btn-sm btn-danger" id="plDel">Sacar</button></div>`;
   } else {
     const tabs = `<div class="tema-sel" style="margin:0 0 10px">${[['mesas', 'Mesas'], ['inv', 'Invitados A‑Z']].map(([k, n]) => `<button type="button" data-pltab="${k}" class="${PLANO_TAB === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
-    lado = PLANO_TAB === 'inv' ? `${tabs}${invListaHTML(items, mid => `data-plsel="${mid}" style="cursor:pointer"`)}` : `${tabs}
+    lado = PLANO_TAB === 'inv' ? `${tabs}${invListaHTML(items, mid => `data-plsel="${mid}" style="cursor:pointer"`)}${invitadosPlano(items).length ? '<button class="btn-sm" id="plImpInv" style="margin-top:10px">🖨️ Imprimir solo la lista</button>' : ''}` : `${tabs}
       ${mesas.length ? `<ul class="list-clean plano-lista">${mesas.map(m => `<li data-plsel="${m.id}" style="cursor:pointer"><div><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}<div class="small muted">${MESA_T[m.t].nom}${(m.esp || []).length ? ` · <span class="esp-dot"></span> ${m.esp.length} ${m.esp.length === 1 ? 'menú especial' : 'menús especiales'}` : ''}${(() => { const c = cuentaEdades(invDe(m)); return c.ad || c.jo ? ` · ${c.ad} ad. · ${c.jo} jóv.` : ''; })()}</div></div>
         <div class="right nowrap small">${num(m.pers) ? `<b style="${num(m.pers) > capMesa(m) ? `color:${m.t === 'ppal' ? '#b8740e' : 'var(--rojo)'}` : ''}">${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`
       : '<p class="muted small">No hay mesas.</p>'}
@@ -2794,6 +2794,7 @@ VIEWS.plano = id => {
   </div>`;
 };
 VIEWS.plano.after = id => {
+  Object.assign(PLANO_OPTS, { dibujo: true, lista: true, esp: true, inv: true });   // desde el editor, la hoja sale completa (salvo "Imprimir solo la lista")
   const items = planoItems(ev(id));
   const set = (cambio, sel) => { if (sel !== undefined) PLANO_SEL = sel; guardarPlano(id, cambio); };
   const sel = items.find(i => i.id === PLANO_SEL);
@@ -2817,6 +2818,7 @@ VIEWS.plano.after = id => {
   if ($('#plBorrar')) $('#plBorrar').onclick = () => confirmar('¿Borrar el plano de este evento? Se sacan todas las mesas con sus nombres y menús especiales. (Si te equivocás, tocá Deshacer)', () => { set([], null); toast('Plano borrado. Si fue sin querer, tocá Deshacer.'); });
   $$('[data-plsel]').forEach(li => li.onclick = () => { PLANO_SEL = li.dataset.plsel; PLANO_VER = true; render(); });
   $$('[data-pltab]').forEach(b => b.onclick = () => { PLANO_TAB = b.dataset.pltab; render(); });
+  if ($('#plImpInv')) $('#plImpInv').onclick = () => { Object.assign(PLANO_OPTS, PLANO_SOLO_INV); location.hash = '#/planohoja/' + id; };
   if ($('.plano-side')) invBuscaHandler($('.plano-side'));
   // mesa elegida
   if (PLANO_VER && sel && angosto()) setTimeout(() => { const ps = $('.plano-side'); if (ps) ps.scrollIntoView({ block: 'start' }); }, 30);   // después de que render() reacomoda el scroll
@@ -2912,34 +2914,45 @@ function guardarModeloPlano(id) {
 }
 
 // hoja para imprimir: el plano como imagen (así sale igual impreso y en el PDF) + la lista de mesas
-const PLANO_OPTS = { lista: true, inv: true };
+const PLANO_OPTS = { dibujo: true, lista: true, esp: true, inv: true };
+const PLANO_SOLO_INV = { dibujo: false, lista: false, esp: false, inv: true };
 VIEWS.planohoja = id => {
   const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
   const items = planoItems(e); if (!items.length) return `<p>Este evento no tiene plano. <a href="#/plano/${id}">Armar plano</a></p>`;
-  const mesas = items.filter(esMesa).sort(ordenMesa), r = resumenPlano(e);
-  const img = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(planoSVG(items, null, `width="${PLANO_W * 2}" height="${PLANO_H * 2}"`, true));
-  return `<div class="no-print print-opts"><a href="#/plano/${id}">← Volver al plano</a>
-    <label class="chk"><input type="checkbox" data-plo="lista" ${PLANO_OPTS.lista ? 'checked' : ''}> Lista de mesas (en otra hoja)</label>
-    ${r.anot ? `<label class="chk"><input type="checkbox" data-plo="inv" ${PLANO_OPTS.inv ? 'checked' : ''}> Lista de invitados A‑Z</label>` : ''}
-    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
-  <div class="print-doc">
-    <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.4rem">Plano de mesas</div><div>${esc(DIAS[dow(e.fecha)])} ${fmtD(e.fecha)}</div><div style="color:#777">${esc(tituloEv(e))}</div></div></div>
-    <div class="center"><img src="${img}" alt="Plano" style="width:540px;max-width:100%;aspect-ratio:${PLANO_W} / ${PLANO_H}"></div>
-    <div class="center" style="color:#777;margin-top:6px">${r.mesas} mesas · ${r.asig ? `${r.asig} personas` : `${r.lugares} lugares`}${r.espUb ? ` · <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2c6fb0;vertical-align:-1px"></span> menús especiales (${r.espUb})` : ''}</div>
-    ${PLANO_OPTS.lista ? `<h2 style="break-before:page;page-break-before:always">Mesas</h2>
+  const mesas = items.filter(esMesa).sort(ordenMesa), r = resumenPlano(e), O = PLANO_OPTS;
+  const img = O.dibujo ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(planoSVG(items, null, `width="${PLANO_W * 2}" height="${PLANO_H * 2}"`, true)) : '';
+  // cada parte arranca en hoja nueva, salvo la primera si no va el dibujo
+  const partes = [
+    O.lista ? `<h2>Mesas</h2>
     <table><thead><tr><th>Mesa</th><th>Quiénes</th><th class="num">Personas</th>${r.ad || r.jo ? '<th class="num">Adultos</th><th class="num">Jóvenes</th>' : ''}${r.espUb ? '<th>Menús especiales</th>' : ''}</tr></thead><tbody>
     ${mesas.map(m => `<tr><td class="nowrap"><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b> <span style="color:#777">${m.t === 'red' ? 'redonda' : m.t === 'rect' ? 'rectangular' : m.t === 'cuad' ? 'cuadrada' : ''}</span></td><td>${esc(m.nom || '')}</td><td class="num">${num(m.pers) || ''}</td>${r.ad || r.jo ? (() => { const c = cuentaEdades(invDe(m)); return `<td class="num">${c.ad || ''}</td><td class="num">${c.jo || ''}</td>`; })() : ''}${r.espUb ? `<td>${(m.esp || []).map(x => `${esc(x.nombre)} <span style="color:#777">(${esc(x.tipo || '')})</span>`).join('<br>')}</td>` : ''}</tr>`).join('')}
-    </tbody><tfoot><tr><td colspan="2">Total</td><td class="num">${r.asig || ''}</td>${r.ad || r.jo ? `<td class="num">${r.ad}</td><td class="num">${r.jo}</td>` : ''}${r.espUb ? `<td>${r.espUb}</td>` : ''}</tr></tfoot></table>` : ''}
-    ${r.espUb ? `<h2${PLANO_OPTS.lista ? '' : ' style="break-before:page;page-break-before:always"'}>Menús especiales</h2>
+    </tbody><tfoot><tr><td colspan="2">Total</td><td class="num">${r.asig || ''}</td>${r.ad || r.jo ? `<td class="num">${r.ad}</td><td class="num">${r.jo}</td>` : ''}${r.espUb ? `<td>${r.espUb}</td>` : ''}</tr></tfoot></table>` : '',
+    O.esp && r.espUb ? `<h2>Menús especiales</h2>
     <table><thead><tr><th>Nombre y apellido</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
-    ${espDelPlano(e).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.tipo || '')}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : ''}
-    ${PLANO_OPTS.inv && r.anot ? `<h2 style="break-before:page;page-break-before:always">Invitados (por orden alfabético)</h2>
+    ${espDelPlano(e).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.tipo || '')}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : '',
+    O.inv && r.anot ? `<h2>Invitados (por orden alfabético)</h2>
     <div style="color:#777;margin-bottom:6px">${r.anot} invitados · ${plural(r.ad, 'adulto', 'adultos')} · ${plural(r.jo, 'joven', 'jóvenes')}${r.sin ? ` · ${r.sin} sin marcar` : ''}</div>
     <table><thead><tr><th>Nombre y apellido</th><th>Edad</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
-    ${invitadosPlano(items).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${EDADES[x.edad] || ''}</td><td>${x.menu ? esc(x.menu) : '<span style="color:#999">Común</span>'}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${invitadosPlano(items).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${EDADES[x.edad] || ''}</td><td>${x.menu ? esc(x.menu) : '<span style="color:#999">Común</span>'}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : '',
+  ].filter(Boolean).map((h, i) => i || O.dibujo ? h.replace('<h2>', '<h2 style="break-before:page;page-break-before:always">') : h);
+  const titulo = !O.dibujo && !O.lista && !(O.esp && r.espUb) && O.inv && r.anot ? 'Lista de invitados' : 'Plano de mesas';
+  const chk = (k, t) => `<label class="chk"><input type="checkbox" data-plo="${k}" ${O[k] ? 'checked' : ''}> ${t}</label>`;
+  return `<div class="no-print print-opts"><a href="#/plano/${id}">← Volver al plano</a>
+    ${chk('dibujo', 'Dibujo del plano')}${chk('lista', 'Lista de mesas')}${r.espUb ? chk('esp', 'Menús especiales') : ''}${r.anot ? chk('inv', 'Lista de invitados A‑Z') : ''}
+    ${r.anot ? '<button class="btn-sm" id="plSoloInv">Solo la lista de invitados</button>' : ''}
+    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
+  <div class="print-doc">
+    <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.4rem">${titulo}</div><div>${esc(DIAS[dow(e.fecha)])} ${fmtD(e.fecha)}</div><div style="color:#777">${esc(tituloEv(e))}</div></div></div>
+    ${O.dibujo ? `<div class="center"><img src="${img}" alt="Plano" style="width:540px;max-width:100%;aspect-ratio:${PLANO_W} / ${PLANO_H}"></div>
+    <div class="center" style="color:#777;margin-top:6px">${r.mesas} mesas · ${r.asig ? `${r.asig} personas` : `${r.lugares} lugares`}${r.espUb ? ` · <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2c6fb0;vertical-align:-1px"></span> menús especiales (${r.espUb})` : ''}</div>` : ''}
+    ${partes.join('\n')}
+    ${!O.dibujo && !partes.length ? '<p class="no-print muted">Elegí arriba qué querés imprimir.</p>' : ''}
   </div>`;
 };
-VIEWS.planohoja.after = () => { $$('[data-plo]').forEach(i => i.onchange = () => { PLANO_OPTS[i.dataset.plo] = i.checked; render(); }); };
+VIEWS.planohoja.after = () => {
+  $$('[data-plo]').forEach(i => i.onchange = () => { PLANO_OPTS[i.dataset.plo] = i.checked; render(); });
+  if ($('#plSoloInv')) $('#plSoloInv').onclick = () => { Object.assign(PLANO_OPTS, PLANO_SOLO_INV); render(); };
+};
 
 /* ---------- PORTAL DEL CLIENTE ----------
    Cada evento puede tener un link secreto (e.portal = token al azar). La app de los dueños guarda en portal/{token}
