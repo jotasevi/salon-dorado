@@ -1872,14 +1872,6 @@ function filasSemana(cols, extra = new Set()) {
   return { fijos: [...fijos, ...deBaja], refuerzo, otros };
 }
 let PERS_EXTRA = new Set();
-// pagos al personal (solo interno): cada persona tiene p.pago = cuánto cobra por evento; lo pagado se marca por mes en config/turnos-AAAA-MM → pagados[pid] = fecha
-const pagadosMes = m => (S.config['turnos-' + m] || {}).pagados || {};
-function marcarPagado(m, pid, on) {
-  const id = 'turnos-' + m, doc = S.config[id] || { id, dias: {} };
-  const pagados = { ...(doc.pagados || {}) };
-  if (on) pagados[pid] = todayISO(); else delete pagados[pid];
-  DB.save('config', { ...doc, id, pagados });
-}
 VIEWS.personal = () => {
   const hoy = todayISO();
   PERS_SEM = PERS_SEM || lunesDe(hoy); PERS_MES = PERS_MES || ym(hoy);
@@ -1912,20 +1904,7 @@ VIEWS.personal = () => {
     <div class="panel"><div class="panel-h"><h2>Días trabajados</h2><input type="month" id="persMes" value="${PERS_MES}" style="width:auto"></div>
       ${delMes.length ? `<table><thead><tr><th>Persona</th><th class="num">Días</th><th>Fechas</th></tr></thead><tbody>${resumen.map(r => `<tr><td>${esc(r.p.nombre)} <span class="small muted">${esc(r.p.rol || '')}</span></td><td class="num"><b>${r.fechas.length}</b></td><td class="small">${r.fechas.map(f => `${DIAS_C[dow(f)]} ${fmtD(f).slice(0, 5)}`).join(', ')}</td></tr>`).join('')}</tbody></table>` : `<p class="muted">Sin convocatorias cargadas en ${fmtYM(PERS_MES).toLowerCase()}.</p>`}
     </div>
-  </div>
-  ${(() => {
-    const pag = pagadosMes(PERS_MES);
-    const filas = resumen.filter(r => r.fechas.length).map(r => ({ ...r, tarifa: num(r.p.pago), total: num(r.p.pago) * r.fechas.length, pagado: !!pag[r.p.id] }));
-    const tot = sum(filas, r => r.total), yaPag = sum(filas.filter(r => r.pagado), r => r.total), sinTarifa = filas.filter(r => !r.tarifa).length;
-    return `<div class="panel"><div class="panel-h"><h2>Pagos al personal · ${fmtYM(PERS_MES)}</h2><span class="badge b-warn" title="No aparece en la hoja que se imprime ni en la lista que se copia">Solo interno</span></div>
-      <p class="small muted" style="margin-top:-6px">Días con "Sí" en el mes × lo que cobra cada uno por evento (se carga en <b>Editar</b> de cada persona). No sale en la hoja impresa.</p>
-      ${filas.length ? `<div class="tbl-wrap"><table><thead><tr><th>Persona</th><th class="num">Días</th><th class="num">Por evento</th><th class="num">Total</th><th class="center">Pagado</th></tr></thead><tbody>
-        ${filas.map(r => `<tr><td>${esc(r.p.nombre)} <span class="small muted">${esc(r.p.rol || '')}</span></td><td class="num">${r.fechas.length}</td>
-          <td class="num">${r.tarifa ? fmt$(r.tarifa) : `<button class="btn-sm" data-pers="${r.p.id}">Cargar</button>`}</td><td class="num"><b>${r.tarifa ? fmt$(r.total) : '—'}</b></td>
-          <td class="center"><input type="checkbox" data-pagado="${r.p.id}" ${r.pagado ? 'checked' : ''} style="width:20px;height:20px" aria-label="Pagado a ${esc(r.p.nombre)}">${r.pagado && pag[r.p.id] ? `<div class="small muted">${fmtD(pag[r.p.id]).slice(0, 5)}</div>` : ''}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td>Total del mes</td><td class="num">${sum(filas, r => r.fechas.length)}</td><td></td><td class="num">${fmt$(tot)}</td><td class="center small">${tot - yaPag > 0 ? `Falta ${fmt$(tot - yaPag)}` : sinTarifa ? '' : tot ? 'Todo pagado' : ''}${sinTarifa ? `<div class="small muted">${sinTarifa} sin cargar cuánto cobra</div>` : ''}</td></tr></tfoot></table></div>`
-      : '<p class="muted">Nadie trabajó este mes todavía.</p>'}</div>`;
-  })()}`;
+  </div>`;
 };
 VIEWS.personal.after = () => {
   $('#nuevaPers').onclick = () => formPersonal();
@@ -1934,7 +1913,6 @@ VIEWS.personal.after = () => {
   const sh = $('#semHoy'); if (sh) sh.onclick = () => { PERS_SEM = lunesDe(todayISO()); PERS_EXTRA = new Set(); render(); };
   $('#persMes').onchange = e => { PERS_MES = e.target.value || ym(todayISO()); render(); };
   $$('[data-pers]').forEach(b => b.onclick = () => formPersonal(b.dataset.pers));
-  $$('[data-pagado]').forEach(c => c.onchange = () => marcarPagado(PERS_MES, c.dataset.pagado, c.checked));
   $$('[data-turno]').forEach(c => c.onclick = () => { const [f, pid] = c.dataset.turno.split('|'); const st = estadoTurno(f, pid); marcarTurno(f, pid, st === '' ? 'si' : st === 'si' ? 'no' : ''); });
   $$('[data-extra]').forEach(b => b.onclick = () => { PERS_EXTRA.add(b.dataset.extra); render(); });
   $$('[data-copiar]').forEach(b => b.onclick = async () => {
@@ -1968,13 +1946,12 @@ function formPersonal(id) {
     title: id ? 'Editar persona' : 'Agregar persona',
     body: F.text('nombre', 'Nombre y apellido', p.nombre, 'full') + F.sel('rol', 'Rol', ROLES_PERSONAL.includes(p.rol) || !p.rol ? ROLES_PERSONAL : [...ROLES_PERSONAL, p.rol], p.rol) +
       F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'inputmode="tel" placeholder="+54911 xxxx-xxxx"') +
-      F.sel('tipo', 'En la grilla', [['fijo', 'Fijo: aparece siempre'], ['refuerzo', 'De refuerzo: se suma cuando lo convocás']], p.tipo || 'fijo', 'full') +
-      F.num('pago', 'Cobra por evento (ARS) · solo interno', p.pago) + '<div></div>' + F.chk('activo', 'Trabaja actualmente con nosotros', p.activo !== false, 'full') +
+      F.sel('tipo', 'En la grilla', [['fijo', 'Fijo: aparece siempre'], ['refuerzo', 'De refuerzo: se suma cuando lo convocás']], p.tipo || 'fijo', 'full') + F.chk('activo', 'Trabaja actualmente con nosotros', p.activo !== false, 'full') +
       F.hint('Si alguien deja de venir, destildá "Trabaja actualmente": deja de aparecer en la grilla pero se guardan sus días trabajados.'),
     danger: id ? { label: 'Eliminar', confirm: '¿Eliminar a esta persona? Mejor dala de baja si querés conservar sus días trabajados.', fn: () => guardarPersonal(personalLista().filter(x => x.id !== id)) } : null,
     onSubmit: d => {
       if (!d.nombre) { toast('Falta el nombre.'); return false; }
-      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo, tipo: d.tipo || 'fijo', pago: num(d.pago) || null };
+      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo, tipo: d.tipo || 'fijo' };
       guardarPersonal(id ? personalLista().map(x => x.id === id ? obj : x) : [...personalLista(), obj]);
     },
   });
