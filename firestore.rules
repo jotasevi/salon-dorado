@@ -18,5 +18,15 @@ service cloud.firestore {
       allow list: if false;
       allow write: if esDueno();
     }
+    // Plano que completa el cliente desde su link: cualquiera con el link puede leer y guardar ESE documento
+    // (solo mesas: quiénes, cuántos y menús especiales). La app de los dueños lo revisa y lo pasa al evento.
+    match /portalPlano/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if request.resource.data.keys().hasOnly(['items', 'actualizado'])
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 100;
+      allow delete: if esDueno();
+    }
   }
 }

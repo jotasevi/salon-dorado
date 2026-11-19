@@ -100,6 +100,8 @@ const DEFAULT_CONFIG = {
   },
   minimos: { 5: 120 /*sáb*/, 4: 100 /*vie*/, dom: 120, otro: 100 },
   sena: 20,
+  capacidad: 210,
+  mesasRect: 10,    // mesas rectangulares que hay (una cuadrada = 2)   // personas como máximo en el salón
   reservaSemana: 30,
   mesesCongelado: 1,
   validezPendiente: 10,
@@ -284,6 +286,27 @@ const DB = {
     const { fsM, db } = this.fb;
     const d = await fsM.getDoc(fsM.doc(db, 'portal', id));
     return d.exists() ? d.data() : null;
+  },
+  savePortalPlano(id, data) {
+    if (this.mode === 'demo') { try { localStorage.setItem('salonDorado.portalPlano.' + id, JSON.stringify(data)); } catch (e) { } return Promise.resolve(); }
+    const { fsM, db } = this.fb;
+    return fsM.setDoc(fsM.doc(db, 'portalPlano', id), data);
+  },
+  async getPortalPlano(id) {
+    if (this.mode === 'demo') { try { return JSON.parse(localStorage.getItem('salonDorado.portalPlano.' + id)); } catch (e) { return null; } }
+    const { fsM, db } = this.fb;
+    const d = await fsM.getDoc(fsM.doc(db, 'portalPlano', id));
+    return d.exists() ? d.data() : null;
+  },
+  // la app de los dueños escucha lo que va completando el cliente
+  escucharPlanoCliente(id, cb) {
+    if (this.mode === 'demo') {
+      const k = 'salonDorado.portalPlano.' + id, h = ev_ => { if (ev_.key === k) { try { cb(JSON.parse(ev_.newValue)); } catch (e) { } } };
+      window.addEventListener('storage', h); setTimeout(() => { this.getPortalPlano(id).then(cb); }, 0);
+      return () => window.removeEventListener('storage', h);
+    }
+    const { fsM, db } = this.fb;
+    return fsM.onSnapshot(fsM.doc(db, 'portalPlano', id), d => cb(d.exists() ? d.data() : null), e => console.error('portalPlano', e.code));
   },
   deletePortal(id) {
     if (this.mode === 'demo') { try { localStorage.removeItem('salonDorado.portal.' + id); } catch (e) { } return; }
@@ -592,7 +615,7 @@ function nombreUsuario() {
 }
 
 /* ---------- impresión aislada: copia solo la hoja a un iframe y se imprime eso (Safari se traba con la app entera) ---------- */
-const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato', imprimir: 'Estado de cuenta', personalhoja: 'Personal' };
+const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato', imprimir: 'Estado de cuenta', personalhoja: 'Personal', planohoja: 'Plano de mesas' };
 function prepararImpresion() {
   const { view, args } = route();
   const doc = $('#main .print-doc');
@@ -871,7 +894,7 @@ function render() {
     aplicarTema();
   }
   const { view, args } = route();
-  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos', contrato: 'eventos', personalhoja: 'personal' }[view] || view;
+  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos', contrato: 'eventos', plano: 'eventos', planohoja: 'eventos', personalhoja: 'personal' }[view] || view;
   $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === navKey));
   const main = $('#main');
   const fn = VIEWS[view] || VIEWS.inicio;
@@ -1342,6 +1365,12 @@ VIEWS.evento = id => {
   <div class="panel"><div class="panel-h"><h3>Timing</h3><div class="actions" style="display:flex;gap:6px;flex-wrap:wrap">${tieneTiming(e) ? `<button class="btn-sm" data-go="timing/${id}">Imprimir timing</button>` : ''}<button class="btn-sm" id="edTiming">${tieneTiming(e) ? 'Editar timing' : 'Armar timing'}</button></div></div>
     ${tieneTiming(e) ? tablaTiming(e.timing, 'small') : '<p class="muted small" style="margin:0">Todavía no tiene timing. Tocá <b>Armar timing</b> y elegí uno de los modelos.</p>'}</div>
 
+  ${(() => { const it = planoItems(e), r = resumenPlano(e);
+    return `<div class="panel"><div class="panel-h"><h3>Plano de mesas</h3><div class="actions" style="display:flex;gap:6px;flex-wrap:wrap">${it.length ? `<button class="btn-sm" data-go="planohoja/${id}">Imprimir plano</button>` : ''}<button class="btn-sm" data-go="plano/${id}">${it.length ? 'Editar plano' : 'Armar plano'}</button></div></div>
+    ${it.length ? `<div class="plano-mini" data-go="plano/${id}" title="Tocá para editar">${planoSVG(it)}</div>
+      <p class="small muted" style="margin:6px 0 0">${r.mesas} mesas · ${r.lugares} lugares · <b>${r.asig}</b> personas ubicadas${r.inv ? ` de ${r.inv.n} (${r.inv.de})` : ''}</p>`
+    : '<p class="muted small" style="margin:0">Todavía no tiene plano. Tocá <b>Armar plano</b>: podés arrancar del modelo de siempre y mover, agregar o sacar mesas.</p>'}</div>`; })()}
+
   <div class="panel"><div class="panel-h"><h2>Cubiertos</h2><div class="actions" style="display:flex;gap:6px;flex-wrap:wrap">
       <button id="condic">Condiciones</button><button id="final">Número final de invitados</button><button class="btn-primary" id="pago">+ Registrar pago</button></div></div>
     ${k.sinValor ? '<div class="alert warn">Falta cargar el valor del cubierto. Tocá <b>Condiciones</b>.</div>' : ''}
@@ -1487,7 +1516,7 @@ function formFinal(id) {
     body: F.num('adultos', 'Adultos y jóvenes (más de 10 años)', f.adultos) + F.num('ninos', 'Niños de 4 a 10 años (medio cubierto)', f.ninos) + F.num('menores', 'Menores de 4 años (no pagan)', f.menores) + '<div></div>' +
       F.chk('confirmado', 'Número confirmado: usar este total para la cuenta', f.confirmado, 'full') +
       F.hint(`Se facturan los adultos + la mitad de los niños, con un mínimo de ${c.minimo} cubiertos enteros.`) + '<div class="full" id="finPrev"></div>',
-    onOpen: form => { const u = () => { const d = readForm(form); const eq = num(d.adultos) + num(d.ninos) * 0.5; $('#finPrev', form).innerHTML = `<div class="alert info">Equivalen a <b>${fmtN(eq)}</b> cubiertos → se facturan <b>${fmtN(Math.max(c.minimo, eq))}</b>. Total de personas: ${num(d.adultos) + num(d.ninos) + num(d.menores)}.</div>`; }; form.oninput = u; u(); },
+    onOpen: form => { const u = () => { const d = readForm(form); const eq = num(d.adultos) + num(d.ninos) * 0.5; $('#finPrev', form).innerHTML = `<div class="alert info">Equivalen a <b>${fmtN(eq)}</b> cubiertos → se facturan <b>${fmtN(Math.max(c.minimo, eq))}</b>. Total de personas: ${num(d.adultos) + num(d.ninos) + num(d.menores)}.</div>${num(d.adultos) + num(d.ninos) + num(d.menores) > num(CONF().capacidad) ? `<div class="alert warn">Supera la capacidad del salón: <b>${num(CONF().capacidad)}</b> personas como máximo.</div>` : ''}`; }; form.oninput = u; u(); },
     onSubmit: d => updCuenta(id, k => { k.final = { adultos: numOrNull(d.adultos), ninos: numOrNull(d.ninos), menores: numOrNull(d.menores), confirmado: d.confirmado }; }),
   });
 }
@@ -1809,8 +1838,8 @@ VIEWS.config.after = () => {
   $('#edDef').onclick = () => modal({
     title: 'Valores por defecto',
     body: F.num('sab', 'Mínimo sábados', c.minimos[5]) + F.num('vie', 'Mínimo viernes', c.minimos[4]) + F.num('dom', 'Mínimo domingos', c.minimos.dom) + F.num('otro', 'Mínimo otros días', c.minimos.otro) + F.num('sena', 'Seña (cubiertos)', c.sena) +
-      F.num('reservaSemana', 'Cubiertos para la semana del evento', c.reservaSemana) + F.num('mesesCongelado', 'Meses sin ajuste', c.mesesCongelado) + F.num('validezPendiente', 'Validez de una reserva pendiente (días)', c.validezPendiente) + F.num('ivaPct', 'IVA %', c.iva.pct) + F.chk('ivaOn', 'Sumar IVA por defecto en eventos nuevos', c.iva.activoPorDefecto, 'full'),
-    onSubmit: d => saveConf({ minimos: { 5: num(d.sab), 4: num(d.vie), dom: num(d.dom), otro: num(d.otro) }, sena: num(d.sena), reservaSemana: num(d.reservaSemana), mesesCongelado: num(d.mesesCongelado), validezPendiente: num(d.validezPendiente), iva: { pct: pct(d.ivaPct) ?? 21, activoPorDefecto: d.ivaOn } }),
+      F.num('reservaSemana', 'Cubiertos para la semana del evento', c.reservaSemana) + F.num('mesesCongelado', 'Meses sin ajuste', c.mesesCongelado) + F.num('validezPendiente', 'Validez de una reserva pendiente (días)', c.validezPendiente) + F.num('ivaPct', 'IVA %', c.iva.pct) + F.num('capacidad', 'Capacidad máxima del salón (personas)', c.capacidad) + F.num('mesasRect', 'Mesas rectangulares que hay', c.mesasRect) + F.chk('ivaOn', 'Sumar IVA por defecto en eventos nuevos', c.iva.activoPorDefecto, 'full'),
+    onSubmit: d => saveConf({ minimos: { 5: num(d.sab), 4: num(d.vie), dom: num(d.dom), otro: num(d.otro) }, sena: num(d.sena), reservaSemana: num(d.reservaSemana), mesesCongelado: num(d.mesesCongelado), validezPendiente: num(d.validezPendiente), iva: { pct: pct(d.ivaPct) ?? 21, activoPorDefecto: d.ivaOn }, capacidad: num(d.capacidad) || 210, mesasRect: num(d.mesasRect) || 10 }),
   });
   $('#edFer').onclick = () => modal({
     title: 'Feriados extra', body: F.area('f', 'Una fecha por renglón (DD/MM/AAAA)', (c.feriadosExtra || []).sort().map(fmtD).join('\n'), 'style="min-height:180px"'),
@@ -2409,7 +2438,9 @@ VIEWS.orden = id => {
 
     ${o.servicio ? `<h2>Menús especiales</h2>${esp.length ? `<table><thead><tr><th class="num" style="width:12%">Cant.</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>
       ${esp.map(x => `<tr><td class="num"><b>${fmtN(x.cant)}</b></td><td>${esc(x.tipo)}</td><td>${esc(x.detalle || '')}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td class="num">${fmtN(sum(esp, x => x.cant))}</td><td colspan="2">Total de menús especiales</td></tr></tfoot></table>` : '<p>No hay menús especiales.</p>'}
+      </tbody><tfoot><tr><td class="num">${fmtN(sum(esp, x => x.cant))}</td><td colspan="2">Total de menús especiales</td></tr></tfoot></table>` : espDelPlano(e).length ? '' : '<p>No hay menús especiales.</p>'}
+      ${espDelPlano(e).length ? `<h3 style="margin:14px 0 6px">Dónde se sientan</h3><table><thead><tr><th>Nombre y apellido</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
+      ${espDelPlano(e).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.tipo || '')}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : ''}
     <h2>Bebida</h2><table><tbody>
       ${fila('Barman', { si: 'Sí, agregan barman', no: 'No' }[sv.barman])}
       ${fila('Bebida extra', (BEBIDA_OPC[sv.bebida] || '') + (sv.bebidaNota ? ' · ' + sv.bebidaNota : ''))}
@@ -2544,6 +2575,304 @@ function seedDemo() {
     .forEach(([d, categoria, detalle, monto]) => put('egresos', { fecha: addMonths(mH, d) + '-05', categoria, detalle, monto }));
 }
 
+/* ---------- PLANO DE MESAS ----------
+   Cada evento guarda su plano en e.plano = { items: [{ id, t, x, y, r, n, nom, pers }] }.
+   t: red (redonda, máx 12), rect (2 rectangulares juntas, máx 16), ppal (principal: 7, 9 o 13; más = caso especial), pista.
+   x, y: centro en un lienzo de 920 × 1300 (como el PDF del plano); r: giro en grados.
+   Los modelos guardados van en config/planos → { lista: [{ id, nombre, items }] } (así no hay que tocar las reglas de Firebase). */
+const PLANO_W = 920, PLANO_H = 1300;
+const MESA_T = {
+  red: { nom: 'Redonda', max: 12, w: 112, h: 112 },
+  rect: { nom: 'Rectangular', max: 8, w: 80, h: 170 },
+  cuad: { nom: 'Cuadrada (2 rectangulares juntas)', max: 16, w: 160, h: 170 },
+  ppal: { nom: 'Mesa principal', max: 13, w: 42 },
+  pista: { nom: 'Pista', w: 520, h: 260 },
+};
+// modelo "10 y 8 mix" (copiado del PDF del plano)
+const PLANO_BASE = { id: 'base', nombre: 'Plano 10 y 8 mix', items: [
+  ['rect', 117, 146, -15], ['red', 288, 146], ['rect', 462, 135, -15], ['red', 634, 146], ['rect', 797, 135, -15],
+  ['red', 172, 365], ['rect', 345, 365, -15], ['red', 503, 365], ['rect', 660, 365, -15], ['red', 832, 365],
+  ['ppal', 117, 637, 0], ['pista', 540, 640, 0],
+  ['red', 197, 937], ['rect', 399, 960, 35], ['red', 597, 950], ['rect', 797, 950, 35],
+  ['rect', 197, 1142, 35], ['red', 371, 1165], ['rect', 591, 1142, 35], ['red', 781, 1165],
+].map(([t, x, y, r]) => ({ t, x, y, r: r || 0 })) };
+const esMesa = it => it.t !== 'pista';
+// hay 10 mesas rectangulares en total (config/general.mesasRect): cada cuadrada usa 2
+const maxRect = () => num(CONF().mesasRect) || 10;
+const rectUsadas = items => items.filter(i => i.t === 'rect').length + 2 * items.filter(i => i.t === 'cuad').length;
+const esTablon = t => t === 'red' || t === 'rect' || t === 'cuad';
+const ladoPpal = p => p > 0 && p <= 7 ? 7 : p > 0 && p <= 9 ? 9 : 13;
+const dimMesa = it => it.t === 'ppal' ? { w: MESA_T.ppal.w, h: ladoPpal(num(it.pers)) * 20 + 20 } : { w: (MESA_T[it.t] || MESA_T.red).w, h: (MESA_T[it.t] || MESA_T.red).h };
+const capMesa = it => (MESA_T[it.t] || {}).max || 0;
+const fmtFechaHora = iso => { const t = new Date(iso); return isNaN(t) ? '' : `${fmtD(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`)} ${pad(t.getHours())}:${pad(t.getMinutes())}`; };
+const planoItems = e => ((e && e.plano && e.plano.items) || []).filter(i => MESA_T[i.t]);
+const ordenMesa = (a, b) => (a.t === 'ppal' ? -1 : 0) - (b.t === 'ppal' ? -1 : 0) || (parseInt(a.n, 10) || 999) - (parseInt(b.n, 10) || 999) || String(a.n || '').localeCompare(String(b.n || ''));
+function invitadosEv(e) {
+  const f = getCuenta(e).final || {}, t = num(f.adultos) + num(f.ninos) + num(f.menores);
+  return t ? { n: t, de: f.confirmado ? 'número final' : 'número final sin confirmar' } : num(e.invitados) ? { n: num(e.invitados), de: 'invitados iniciales' } : null;
+}
+function resumenPlano(e) {
+  const m = planoItems(e).filter(esMesa);
+  return { mesas: m.length, lugares: sum(m, capMesa), asig: sum(m, i => i.pers), inv: invitadosEv(e), cap: num(CONF().capacidad) || 210, espUb: sum(m, i => (i.esp || []).length), espTot: sum(((e.servicio || {}).especiales || []), x => x.cant) };
+}
+// menús especiales ubicados en el plano: [{ nombre, tipo, mesa }]
+const espDelPlano = e => planoItems(e).filter(esMesa).sort(ordenMesa).flatMap(m => (m.esp || []).map(x => ({ ...x, mesa: m.t === 'ppal' ? 'Principal' : 'Mesa ' + (m.n || '?') })));
+const tiposEspEv = e => [...new Set([...((e.servicio || {}).especiales || []).filter(x => num(x.cant)).map(x => x.tipo), ...(CONF().listas.especiales || [])])];
+// numera las mesas por filas (de arriba a abajo y de izquierda a derecha); la principal es "P"
+function numerarMesas(items) {
+  const ms = items.filter(i => esTablon(i.t)).sort((a, b) => a.y - b.y);
+  const filas = [];
+  ms.forEach(m => { const f = filas.find(f => Math.abs(f.y - m.y) < 90); if (f) f.m.push(m); else filas.push({ y: m.y, m: [m] }); });
+  let n = 0; const num_ = {};
+  filas.forEach(f => f.m.sort((a, b) => a.x - b.x).forEach(m => { num_[m.id] = String(++n); }));
+  return items.map(i => num_[i.id] ? { ...i, n: num_[i.id] } : i.t === 'ppal' && !i.n ? { ...i, n: 'P' } : i);
+}
+const desdeModelo = m => numerarMesas(m.items.map(i => ({ id: uid(), t: i.t, x: i.x, y: i.y, r: i.r || 0, n: i.n || '', nom: i.nom || '', pers: i.pers || null, esp: clean(i.esp || []) })));
+const modelosPlano = () => [PLANO_BASE, ...(((S.config.planos || {}).lista) || [])];
+
+function itemSVG(it, sel, imp) {
+  const { w, h } = dimMesa(it), p = num(it.pers), cap = capMesa(it), over = !imp && cap && p > cap;   // en la hoja impresa, sin colores de aviso
+  const st = sel ? '#c8913f' : over ? (it.t === 'ppal' ? '#d08a16' : '#c0392b') : '#555', sw = sel ? 5 : 2.5;
+  if (it.t === 'pista') return `<g class="pm${sel ? ' on' : ''}" data-pm="${it.id}" transform="translate(${it.x} ${it.y})"><g transform="rotate(${it.r || 0})"><rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="8" fill="#f6f1e8" stroke="${sel ? st : '#b9a688'}" stroke-width="${sel ? sw : 2}" stroke-dasharray="12 9"/></g><text text-anchor="middle" y="11" font-size="32" letter-spacing="8" fill="#a8916c">PISTA</text></g>`;
+  const silla = (x, y, extra) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6.5" fill="${extra ? '#f2c38f' : '#e3d2b6'}" stroke="#b49a74" stroke-width="1"/>`;
+  let forma, sillas = '';
+  if (it.t === 'red') {
+    forma = `<circle r="${w / 2}" fill="#fff" stroke="${st}" stroke-width="${sw}"/>`;
+    for (let i = 0; i < p; i++) { const a = i / p * 2 * Math.PI - Math.PI / 2; sillas += silla(Math.cos(a) * (w / 2 + 12), Math.sin(a) * (w / 2 + 12)); }
+  } else {
+    forma = `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="3" fill="#fff" stroke="${st}" stroke-width="${sw}"/>`;
+    const fila = (k, x, extra) => { for (let i = 0; i < k; i++) sillas += silla(x, -h / 2 + (i + 0.5) * h / k, extra); };
+    if (it.t === 'ppal') { const a = Math.min(p, 13); fila(a, -(w / 2 + 12)); if (p > 13) fila(p - 13, w / 2 + 12, true); }   // los de más, de espalda a la pista
+    else if (it.t === 'cuad') {
+      const k = [0, 0, 0, 0]; for (let i = 0; i < p; i++) k[i % 4]++;
+      fila(k[0], -(w / 2 + 12)); fila(k[1], w / 2 + 12);
+      for (const [n_, y_] of [[k[2], -(h / 2 + 12)], [k[3], h / 2 + 12]]) for (let i = 0; i < n_; i++) sillas += silla(-w / 2 + (i + 0.5) * w / n_, y_);
+    }
+    else { fila(Math.ceil(p / 2), -(w / 2 + 12)); fila(Math.floor(p / 2), w / 2 + 12); }
+  }
+  const lineas = [[it.n || '', it.t === 'ppal' ? 22 : 30, 'bold', '#222']];
+  if (it.nom) lineas.push([it.nom.length > 18 ? it.nom.slice(0, 17) + '…' : it.nom, 14, 'normal', '#444']);
+  if (p) lineas.push([`${p} pers.`, 14, 'normal', over ? st : '#8a7a63']);
+  const alto = sum(lineas, l => l[1] + 3); let y = -alto / 2;
+  const textos = lineas.filter(l => l[0]).map(([t, fs, fw, c]) => { y += fs + 3; return `<text text-anchor="middle" y="${(y - 5).toFixed(1)}" font-size="${fs}" font-weight="${fw}" fill="${c}" stroke="#fff" stroke-width="4" paint-order="stroke">${esc(t)}</text>`; }).join('');
+  const ne = (it.esp || []).length;
+  const insignia = ne ? `<circle cx="30" cy="-34" r="15" fill="#2c6fb0" stroke="#fff" stroke-width="2.5"/><text x="30" y="-28" text-anchor="middle" font-size="17" font-weight="bold" fill="#fff">${ne}</text>` : '';
+  return `<g class="pm${sel ? ' on' : ''}" data-pm="${it.id}" transform="translate(${it.x} ${it.y})"><g transform="rotate(${it.r || 0})">${forma}${sillas}</g>${textos}${insignia}</g>`;
+}
+function planoSVG(items, sel, attrs = '', imp) {
+  const orden = [...items.filter(i => !esMesa(i)), ...items.filter(esMesa)];   // la pista abajo de todo
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="plano-svg" viewBox="0 0 ${PLANO_W} ${PLANO_H}" font-family="Helvetica, Arial, sans-serif" ${attrs}><rect width="${PLANO_W}" height="${PLANO_H}" fill="#fff"/>${orden.map(i => itemSVG(i, i.id === sel, imp)).join('')}</svg>`;
+}
+
+let PLANO_SEL = null, PLANO_VER = false;   // PLANO_VER: en el celular, al tocar una mesa se baja hasta sus datos
+const angosto = () => window.innerWidth < 900;
+const PLANO_UNDO = {};
+function guardarPlano(id, items, sinDeshacer) {
+  const e = ev(id); if (!e) return;
+  if (!sinDeshacer) { const u = PLANO_UNDO[id] || (PLANO_UNDO[id] = []); u.push(clean(planoItems(e))); if (u.length > 40) u.shift(); }
+  DB.save('eventos', { ...clean(e), plano: { ...(e.plano || {}), items } });
+}
+
+VIEWS.plano = id => {
+  const e = ev(id); if (!e) return '<p>Evento no encontrado. <a href="#/eventos">Volver</a></p>';
+  const items = planoItems(e), sel = items.find(i => i.id === PLANO_SEL), r = resumenPlano(e);
+  if (!sel) PLANO_SEL = null;
+  const falta = r.inv ? r.inv.n - r.asig : 0;
+  const mesas = items.filter(esMesa).sort(ordenMesa);
+  let lado;
+  if (sel) {
+    const T = MESA_T[sel.t], cap = capMesa(sel), p = num(sel.pers);
+    lado = `<div class="panel-h"><h3>${T.nom}${sel.n ? ' ' + esc(sel.n) : ''}</h3><button class="btn-sm" id="plListo">Listo</button></div>
+      ${esMesa(sel) ? `<div class="fgrid" style="grid-template-columns:1fr 1fr">
+        <label class="f"><span>Número o nombre</span><input id="plN" value="${esc(sel.n || '')}" placeholder="Ej.: 5"></label>
+        <label class="f"><span>Personas</span><input id="plP" inputmode="numeric" value="${p || ''}" placeholder="0"></label>
+        <label class="f full"><span>Quiénes se sientan</span><input id="plQ" value="${esc(sel.nom || '')}" placeholder="Ej.: Amigos de la facu"></label></div>
+        <p class="small ${cap && p > cap ? '' : 'muted'}" style="margin:6px 0 10px">${sel.t === 'ppal'
+          ? (p > 13 ? `<b style="color:#b8740e">Caso especial:</b> ${p - 13} ${p - 13 === 1 ? 'persona sentada' : 'personas sentadas'} de espalda a la pista.` : 'Se arma para 7, 9 o 13. Si son más, se sientan de espalda a la pista (caso especial).')
+          : p > cap ? `<b style="color:var(--rojo)">Se pasa del máximo:</b> entran ${cap} como mucho.` : `Entran ${cap} como máximo.`}</p>
+        <div class="plano-esp"><div class="small" style="font-weight:600;margin-bottom:4px"><span class="esp-dot"></span> Menús especiales en esta mesa</div>
+          ${(sel.esp || []).length ? `<ul class="list-clean">${sel.esp.map(x => `<li><div><b>${esc(x.nombre)}</b><div class="small muted">${esc(x.tipo || '')}</div></div><button type="button" class="btn-sm" data-espdel="${x.id}" title="Quitar">✕</button></li>`).join('')}</ul>` : ''}
+          <div class="fgrid" style="grid-template-columns:1fr 1fr;margin-top:6px">
+            <label class="f"><span>Nombre y apellido</span><input id="plEN" placeholder="Ej.: Laura Gómez" autocomplete="off"></label>
+            <label class="f"><span>Menú</span><select id="plET">${tiposEspEv(e).map(t => `<option>${esc(t)}</option>`).join('')}</select></label></div>
+          <button class="btn-sm" id="plEA" style="margin-top:6px">+ Agregar menú especial</button></div>` : '<p class="small muted" style="margin-top:0">Arrastrala para moverla.</p>'}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn-sm" data-girar="-15" title="Girar a la izquierda">↺ Girar</button><button class="btn-sm" data-girar="15" title="Girar a la derecha">↻ Girar</button>${sel.r ? '<button class="btn-sm" data-girar="0">Enderezar</button>' : ''}
+        ${sel.t === 'rect' ? `<button class="btn-sm" id="plJuntar" ${rectUsadas(items) + 1 > maxRect() ? 'disabled title="No quedan rectangulares libres"' : ''}>Juntar con otra (cuadrada)</button>` : ''}${sel.t === 'cuad' ? '<button class="btn-sm" id="plSeparar">Separar en 2 rectangulares</button>' : ''}
+        <button class="btn-sm" id="plDup" ${sel.t === 'rect' && rectUsadas(items) + 1 > maxRect() || sel.t === 'cuad' && rectUsadas(items) + 2 > maxRect() ? 'disabled title="No quedan rectangulares libres"' : ''}>Duplicar</button><button class="btn-sm btn-danger" id="plDel">Sacar</button></div>`;
+  } else {
+    lado = `<div class="panel-h"><h3>Mesas</h3></div>
+      ${mesas.length ? `<ul class="list-clean plano-lista">${mesas.map(m => `<li data-plsel="${m.id}" style="cursor:pointer"><div><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}<div class="small muted">${MESA_T[m.t].nom}${(m.esp || []).length ? ` · <span class="esp-dot"></span> ${m.esp.length} ${m.esp.length === 1 ? 'menú especial' : 'menús especiales'}` : ''}</div></div>
+        <div class="right nowrap small">${num(m.pers) ? `<b style="${num(m.pers) > capMesa(m) ? `color:${m.t === 'ppal' ? '#b8740e' : 'var(--rojo)'}` : ''}">${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`
+      : '<p class="muted small">No hay mesas.</p>'}
+      <p class="small muted" style="margin-bottom:0">Tocá una mesa (acá o en el plano) para ponerle nombre, cantidad de personas, girarla o sacarla.</p>`;
+  }
+  return `<div class="top"><div><a href="#/evento/${id}" class="small">← Volver al evento</a><h1>Plano de mesas</h1><div class="muted">${esc(tituloEv(e))} · ${fmtDL(e.fecha)}</div></div>
+    <div class="actions"><button id="plModelo">Cargar modelo</button>${items.length ? `<button id="plGuardarM">Guardar como modelo</button><button class="btn-gold" data-go="planohoja/${id}">🖨️ Imprimir / PDF</button>` : ''}</div></div>
+  ${items.length ? `<div class="cards">
+    <div class="card"><div class="k">Mesas</div><div class="v">${r.mesas}</div><div class="small muted">${items.filter(i => i.t === 'red').length} redondas · ${items.filter(i => i.t === 'rect').length} rectangulares${items.some(i => i.t === 'cuad') ? ` · ${items.filter(i => i.t === 'cuad').length} cuadradas` : ''}${items.some(i => i.t === 'ppal') ? ' · principal' : ''}</div></div>
+    <div class="card ${rectUsadas(items) > maxRect() ? 'bad' : ''}"><div class="k">Mesas rectangulares usadas</div><div class="v">${rectUsadas(items)} de ${maxRect()}</div><div class="small muted">Cada cuadrada usa 2</div></div>
+    <div class="card"><div class="k">Lugares (máximo)</div><div class="v">${r.lugares}</div></div>
+    <div class="card ${r.inv && falta > 0 ? 'warn' : r.inv ? 'good' : ''}"><div class="k">Personas ubicadas</div><div class="v">${r.asig}</div>${r.inv ? `<div class="small muted">${falta > 0 ? `Faltan ubicar ${falta}` : falta < 0 ? `${-falta} más que los invitados` : 'Están todos'} · ${r.inv.n} invitados (${r.inv.de})</div>` : ''}</div>
+    ${r.espTot || r.espUb ? `<div class="card ${r.espTot && r.espUb < r.espTot ? 'warn' : 'good'}"><div class="k"><span class="esp-dot"></span> Menús especiales ubicados</div><div class="v">${r.espUb}${r.espTot ? ` de ${r.espTot}` : ''}</div>${r.espTot && r.espUb < r.espTot ? `<div class="small muted">Faltan ${r.espTot - r.espUb}: tocá la mesa y agregalos</div>` : r.espTot && r.espUb > r.espTot ? `<div class="small muted">Cargados en Bebida y menús especiales: ${r.espTot}</div>` : ''}</div>` : ''}
+  </div>` : ''}
+  ${r.asig > r.cap || (r.inv && r.inv.n > r.cap) ? `<div class="alert warn">Ojo: el salón tiene capacidad para <b>${r.cap}</b> personas como máximo${r.asig > r.cap ? ` y hay ${r.asig} ubicadas` : ` y figuran ${r.inv.n} invitados`}.</div>` : ''}
+  ${rectUsadas(items) > maxRect() ? `<div class="alert bad">Este plano usa <b>${rectUsadas(items)}</b> mesas rectangulares y hay <b>${maxRect()}</b> (cada cuadrada son 2). Cambiá alguna por redonda.</div>` : ''}
+  ${r.inv && r.lugares && r.lugares < r.inv.n ? `<div class="alert warn">Con estas mesas entran ${r.lugares} personas y hay ${r.inv.n} invitados: hace falta agregar mesas.</div>` : ''}
+  ${items.length ? (() => { const m = (e.plano || {}).cliente || 'no', act = (e.plano || {}).clienteAct;
+    return `<div class="panel plano-cli"><label class="f"><span>En el link del cliente</span><select id="plCli">${[['no', 'No mostrar el plano'], ['ver', 'El cliente solo lo ve'], ['editar', 'El cliente lo puede completar']].map(([v, t]) => `<option value="${v}" ${v === m ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <div class="small muted" style="flex:1;min-width:220px">${!e.portal ? 'Este evento todavía no tiene link del cliente.' : m === 'editar' ? 'El cliente anota quiénes se sientan en cada mesa, cuántos y los menús especiales. No puede mover ni agregar mesas. Desde el día del evento queda solo para ver.' : m === 'ver' ? 'El cliente ve el plano pero no lo puede cambiar.' : 'El cliente no ve el plano.'}${act ? ` <br>Última vez que lo completó el cliente: <b>${fmtFechaHora(act)}</b>.` : ''}</div>
+      <button class="btn-sm" id="plLink">${e.portal ? '🔗 Link del cliente' : '🔗 Crear link del cliente'}</button></div>`; })() : ''}
+  <div class="plano-wrap">
+    <div class="panel">
+      <div class="plano-tools"><button class="btn-sm" data-pladd="red">+ Redonda</button>${(() => { const u = rectUsadas(items), mx = maxRect(); return `<button class="btn-sm" data-pladd="rect" ${u >= mx ? `disabled title="Ya se usan las ${mx} rectangulares"` : ''}>+ Rectangular</button><button class="btn-sm" data-pladd="cuad" ${u + 2 > mx ? `disabled title="No quedan 2 rectangulares libres"` : ''}>+ Cuadrada</button>`; })()}${items.some(i => i.t === 'ppal') ? '' : '<button class="btn-sm" data-pladd="ppal">+ Principal</button>'}${items.some(i => i.t === 'pista') ? '' : '<button class="btn-sm" data-pladd="pista">+ Pista</button>'}
+        <span style="flex:1"></span>${(PLANO_UNDO[id] || []).length ? '<button class="btn-sm" id="plUndo">↶ Deshacer</button>' : ''}${items.length ? '<button class="btn-sm" id="plNum" title="Numera las mesas por filas, de arriba a abajo">Numerar</button><button class="btn-sm" id="plVaciar">Vaciar</button>' : ''}</div>
+      ${items.length ? planoSVG(items, PLANO_SEL, 'id="plSvg"') + '<p class="small muted" style="margin:8px 0 0">Arrastrá las mesas con el dedo o el mouse para acomodarlas. Se guarda solo.</p>'
+        : `<div class="center" style="padding:40px 10px"><p>Este evento todavía no tiene plano.</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn-primary" id="plBase">Empezar con el ${esc(PLANO_BASE.nombre)}</button><button id="plModelo2">Elegir otro modelo</button></div><p class="small muted">O agregá mesas una por una con los botones de arriba.</p></div>`}
+    </div>
+    <div class="panel plano-side">${lado}</div>
+  </div>`;
+};
+VIEWS.plano.after = id => {
+  const items = planoItems(ev(id));
+  const set = (cambio, sel) => { if (sel !== undefined) PLANO_SEL = sel; guardarPlano(id, cambio); };
+  const sel = items.find(i => i.id === PLANO_SEL);
+  const cambiarSel = patch => set(items.map(i => i.id === PLANO_SEL ? { ...i, ...patch } : i));
+  // agregar
+  $$('[data-pladd]').forEach(b => b.onclick = () => {
+    const t = b.dataset.pladd, ns = items.map(i => parseInt(i.n, 10)).filter(n => !isNaN(n));
+    const k = items.length % 8, nuevo = { id: uid(), t, x: t === 'pista' ? 540 : 400 + k * 20, y: t === 'pista' ? 640 : 560 + k * 20, r: 0, n: t === 'ppal' ? 'P' : t === 'pista' ? '' : String((ns.length ? Math.max(...ns) : 0) + 1), nom: '', pers: null };
+    set([...items, nuevo], nuevo.id);
+    toast('Mesa agregada en el medio: arrastrala a su lugar.');
+  });
+  const base = () => { set(desdeModelo(PLANO_BASE), null); toast('Modelo cargado. Si no era este, tocá Deshacer.'); };
+  if ($('#plBase')) $('#plBase').onclick = base;
+  [$('#plModelo'), $('#plModelo2')].forEach(b => { if (b) b.onclick = () => elegirModeloPlano(id); });
+  if ($('#plGuardarM')) $('#plGuardarM').onclick = () => guardarModeloPlano(id);
+  if ($('#plUndo')) $('#plUndo').onclick = () => { const u = PLANO_UNDO[id]; if (u && u.length) { PLANO_SEL = null; guardarPlano(id, u.pop(), true); } };
+  if ($('#plNum')) $('#plNum').onclick = () => { set(numerarMesas(items.map(i => esTablon(i.t) ? { ...i, n: '' } : i))); toast('Mesas numeradas por filas.'); };
+  if ($('#plCli')) $('#plCli').onchange = ev_ => { const E = clean(ev(id)); E.plano = { ...(E.plano || {}), cliente: ev_.target.value }; DB.save('eventos', E);
+    toast(ev_.target.value === 'editar' ? 'Listo: el cliente ya puede completar el plano desde su link.' : ev_.target.value === 'ver' ? 'El cliente ve el plano, sin poder cambiarlo.' : 'El plano ya no se muestra en el link del cliente.'); };
+  if ($('#plLink')) $('#plLink').onclick = () => modalPortal(id);
+  if ($('#plVaciar')) $('#plVaciar').onclick = () => confirmar('¿Sacar todas las mesas del plano? (Se puede deshacer)', () => set([], null));
+  $$('[data-plsel]').forEach(li => li.onclick = () => { PLANO_SEL = li.dataset.plsel; PLANO_VER = true; render(); });
+  // mesa elegida
+  if (PLANO_VER && sel && angosto()) setTimeout(() => { const ps = $('.plano-side'); if (ps) ps.scrollIntoView({ block: 'start' }); }, 30);   // después de que render() reacomoda el scroll
+  PLANO_VER = false;
+  if (sel) {
+    $('#plListo').onclick = () => { PLANO_SEL = null; render(); if (angosto()) setTimeout(() => { const v = $('#plSvg'); if (v) v.scrollIntoView({ block: 'center' }); }, 30); };
+    if ($('#plN')) $('#plN').onchange = ev_ => cambiarSel({ n: ev_.target.value.trim() });
+    if ($('#plQ')) $('#plQ').onchange = ev_ => cambiarSel({ nom: ev_.target.value.trim() });
+    if ($('#plP')) $('#plP').onchange = ev_ => { const v = Math.max(0, Math.round(num(ev_.target.value))); cambiarSel({ pers: v || null }); };
+    if ($('#plEA')) {
+      const agregar = () => { const nombre = $('#plEN').value.trim(); if (!nombre) { toast('Escribí el nombre y apellido.'); $('#plEN').focus(); return; }
+        cambiarSel({ esp: [...(sel.esp || []), { id: uid(), nombre, tipo: $('#plET').value }] }); toast('Menú especial agregado.'); };
+      $('#plEA').onclick = agregar;
+      $('#plEN').onkeydown = ev_ => { if (ev_.key === 'Enter') { ev_.preventDefault(); agregar(); } };
+    }
+    $$('[data-espdel]').forEach(b => b.onclick = () => cambiarSel({ esp: (sel.esp || []).filter(x => x.id !== b.dataset.espdel) }));
+    $$('[data-girar]').forEach(b => b.onclick = () => { const g = +b.dataset.girar; let r = g ? ((sel.r || 0) + g) % 360 : 0; if (r > 180) r -= 360; if (r <= -180) r += 360; cambiarSel({ r }); });
+    $('#plDup').onclick = () => { const n = { ...sel, id: uid(), x: Math.min(PLANO_W - 40, sel.x + 40), y: Math.min(PLANO_H - 40, sel.y + 40), pers: null, nom: '', esp: [] };
+      if (esMesa(sel) && sel.t !== 'ppal') { const ns = items.map(i => parseInt(i.n, 10)).filter(x => !isNaN(x)); n.n = String((ns.length ? Math.max(...ns) : 0) + 1); }
+      set([...items, n], n.id); };
+    $('#plDel').onclick = () => set(items.filter(i => i.id !== sel.id), null);
+    if ($('#plJuntar')) $('#plJuntar').onclick = () => { cambiarSel({ t: 'cuad' }); toast('Ahora es una cuadrada (2 rectangulares juntas).'); };
+    if ($('#plSeparar')) $('#plSeparar').onclick = () => {
+      const a = (sel.r || 0) * Math.PI / 180, dx = Math.cos(a) * 50, dy = Math.sin(a) * 50, p = num(sel.pers);
+      const ns = items.map(i => parseInt(i.n, 10)).filter(x => !isNaN(x)), otra = { ...sel, id: uid(), t: 'rect', x: Math.round(sel.x + dx), y: Math.round(sel.y + dy), n: String((ns.length ? Math.max(...ns) : 0) + 1), nom: '', pers: Math.floor(p / 2) || null, esp: [] };
+      set(items.map(i => i.id === sel.id ? { ...i, t: 'rect', x: Math.round(sel.x - dx), y: Math.round(sel.y - dy), pers: Math.ceil(p / 2) || null } : i).concat(otra));
+      toast('Separada en 2 rectangulares: acomodalas donde quieras.');
+    };
+  }
+  // arrastrar (mouse y dedo)
+  const svg = $('#plSvg'); if (!svg) return;
+  const pt = ev_ => { const p = svg.createSVGPoint(); p.x = ev_.clientX; p.y = ev_.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); };
+  let drag = null;
+  svg.addEventListener('touchstart', ev_ => { if (ev_.target.closest('[data-pm]')) ev_.preventDefault(); }, { passive: false });   // que no se mueva la página al arrastrar una mesa
+  svg.addEventListener('pointerdown', ev_ => {
+    const g = ev_.target.closest('[data-pm]');
+    if (!g) { if (PLANO_SEL) { PLANO_SEL = null; render(); } return; }
+    const it = items.find(i => i.id === g.dataset.pm); if (!it) return;
+    ev_.preventDefault();
+    const p = pt(ev_);
+    drag = { g, it, dx: p.x - it.x, dy: p.y - it.y, x: it.x, y: it.y, sx: ev_.clientX, sy: ev_.clientY, movio: false };
+    try { svg.setPointerCapture(ev_.pointerId); } catch (err) { }
+    g.parentNode.appendChild(g);   // la que se arrastra queda arriba
+  });
+  svg.addEventListener('pointermove', ev_ => {
+    if (!drag) return;
+    if (!drag.movio && Math.hypot(ev_.clientX - drag.sx, ev_.clientY - drag.sy) < 5) return;
+    drag.movio = true;
+    const p = pt(ev_), r5 = v => Math.round(v / 5) * 5;
+    drag.x = Math.max(20, Math.min(PLANO_W - 20, r5(p.x - drag.dx))); drag.y = Math.max(20, Math.min(PLANO_H - 20, r5(p.y - drag.dy)));
+    drag.g.setAttribute('transform', `translate(${drag.x} ${drag.y})`);
+  });
+  const soltar = ev_ => {
+    const d = drag; drag = null; if (!d) return;
+    if (d.movio && ev_.type === 'pointerup') set(items.map(i => i.id === d.it.id ? { ...i, x: d.x, y: d.y } : i), d.it.id);
+    else { PLANO_SEL = d.it.id; PLANO_VER = true; render(); }
+  };
+  svg.addEventListener('pointerup', soltar);
+  svg.addEventListener('pointercancel', soltar);
+};
+
+function elegirModeloPlano(id) {
+  const ms = modelosPlano();
+  const desc = m => { const c = t => m.items.filter(i => i.t === t).length; return `${c('red')} redondas · ${c('rect')} rectangulares${c('cuad') ? ` · ${c('cuad')} cuadradas` : ''}${c('ppal') ? ' · principal' : ''}`; };
+  const { close } = modal({
+    title: 'Cargar un modelo de plano', submit: '',
+    body: `<div class="full"><p class="small muted" style="margin-top:0">Reemplaza el plano de este evento (si te equivocás, tocá <b>Deshacer</b>). Después podés mover, agregar o sacar mesas.</p>
+      <ul class="list-clean">${ms.map(m => `<li><div><b>${esc(m.nombre)}</b>${m.id === 'base' ? ' <span class="badge b-ok">de siempre</span>' : ''}<div class="small muted">${desc(m)}</div></div>
+        <div class="nowrap"><button type="button" class="btn-sm btn-primary" data-cargar="${m.id}">Cargar</button>${m.id === 'base' ? '' : ` <button type="button" class="btn-sm" data-borrarm="${m.id}" title="Borrar este modelo">✕</button>`}</div></li>`).join('')}</ul>
+      ${ms.length === 1 ? '<p class="small muted">Cuando armes un plano que te guste, tocá <b>Guardar como modelo</b> para tenerlo acá.</p>' : ''}</div>`,
+    onOpen: form => {
+      $$('[data-cargar]', form).forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.cargar); close(); PLANO_SEL = null; guardarPlano(id, desdeModelo(m)); toast(`Cargado: ${m.nombre}.`); });
+      $$('[data-borrarm]', form).forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.borrarm); close();
+        confirmar(`¿Borrar el modelo "${m.nombre}"? Los planos de los eventos no cambian.`, () => { const c = S.config.planos || { id: 'planos', lista: [] }; DB.save('config', { ...clean(c), id: 'planos', lista: (c.lista || []).filter(x => x.id !== m.id) }); toast('Modelo borrado.'); }); });
+    },
+  });
+}
+function guardarModeloPlano(id) {
+  const items = planoItems(ev(id));
+  modal({
+    title: 'Guardar como modelo',
+    body: F.text('nombre', 'Nombre del modelo', '', 'full required placeholder="Ej.: 15 redondas sin rectangulares"') + F.chk('conNombres', 'Guardar también los nombres, las personas y los menús especiales de cada mesa', false, 'full') +
+      F.hint('El modelo queda disponible en <b>Cargar modelo</b> para cualquier evento. Si ya hay uno con el mismo nombre, se reemplaza.'),
+    onSubmit: d => {
+      const nombre = (d.nombre || '').trim(); if (!nombre) { toast('Poné un nombre.'); return false; }
+      const c = S.config.planos || { id: 'planos', lista: [] }, lista = (c.lista || []).filter(x => x.nombre.toLowerCase() !== nombre.toLowerCase());
+      lista.push({ id: uid(), nombre, items: items.map(i => ({ t: i.t, x: i.x, y: i.y, r: i.r || 0, n: i.n || '', ...(d.conNombres ? { nom: i.nom || '', pers: i.pers || null, esp: clean(i.esp || []) } : {}) })) });
+      DB.save('config', { ...clean(c), id: 'planos', lista });
+      toast('Modelo guardado.');
+    },
+  });
+}
+
+// hoja para imprimir: el plano como imagen (así sale igual impreso y en el PDF) + la lista de mesas
+const PLANO_OPTS = { lista: true };
+VIEWS.planohoja = id => {
+  const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
+  const items = planoItems(e); if (!items.length) return `<p>Este evento no tiene plano. <a href="#/plano/${id}">Armar plano</a></p>`;
+  const mesas = items.filter(esMesa).sort(ordenMesa), r = resumenPlano(e);
+  const img = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(planoSVG(items, null, `width="${PLANO_W * 2}" height="${PLANO_H * 2}"`, true));
+  return `<div class="no-print print-opts"><a href="#/plano/${id}">← Volver al plano</a>
+    <label class="chk"><input type="checkbox" data-plo="lista" ${PLANO_OPTS.lista ? 'checked' : ''}> Lista de mesas (en otra hoja)</label>
+    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
+  <div class="print-doc">
+    <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.4rem">Plano de mesas</div><div>${esc(DIAS[dow(e.fecha)])} ${fmtD(e.fecha)}</div><div style="color:#777">${esc(tituloEv(e))}</div></div></div>
+    <div class="center"><img src="${img}" alt="Plano" style="width:540px;max-width:100%;aspect-ratio:${PLANO_W} / ${PLANO_H}"></div>
+    <div class="center" style="color:#777;margin-top:6px">${r.mesas} mesas · ${r.asig ? `${r.asig} personas` : `${r.lugares} lugares`}${r.espUb ? ` · <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2c6fb0;vertical-align:-1px"></span> menús especiales (${r.espUb})` : ''}</div>
+    ${PLANO_OPTS.lista ? `<h2 style="break-before:page;page-break-before:always">Mesas</h2>
+    <table><thead><tr><th>Mesa</th><th>Quiénes</th><th class="num">Personas</th>${r.espUb ? '<th>Menús especiales</th>' : ''}</tr></thead><tbody>
+    ${mesas.map(m => `<tr><td class="nowrap"><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b> <span style="color:#777">${m.t === 'red' ? 'redonda' : m.t === 'rect' ? 'rectangular' : m.t === 'cuad' ? 'cuadrada' : ''}</span></td><td>${esc(m.nom || '')}</td><td class="num">${num(m.pers) || ''}</td>${r.espUb ? `<td>${(m.esp || []).map(x => `${esc(x.nombre)} <span style="color:#777">(${esc(x.tipo || '')})</span>`).join('<br>')}</td>` : ''}</tr>`).join('')}
+    </tbody><tfoot><tr><td colspan="2">Total</td><td class="num">${r.asig || ''}</td>${r.espUb ? `<td>${r.espUb}</td>` : ''}</tr></tfoot></table>` : ''}
+    ${r.espUb ? `<h2${PLANO_OPTS.lista ? '' : ' style="break-before:page;page-break-before:always"'}>Menús especiales</h2>
+    <table><thead><tr><th>Nombre y apellido</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
+    ${espDelPlano(e).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.tipo || '')}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : ''}
+  </div>`;
+};
+VIEWS.planohoja.after = () => { $$('[data-plo]').forEach(i => i.onchange = () => { PLANO_OPTS[i.dataset.plo] = i.checked; render(); }); };
+
 /* ---------- PORTAL DEL CLIENTE ----------
    Cada evento puede tener un link secreto (e.portal = token al azar). La app de los dueños guarda en portal/{token}
    una copia del estado de cuenta y del timing tal cual salen impresos (sin costos) y la actualiza sola cuando cambian.
@@ -2558,11 +2887,34 @@ function snapshotPortal(e) {
   try {
     const t = document.createElement('template'), hoja = html => { t.innerHTML = html; const d = t.content.querySelector('.print-doc'); return d ? d.outerHTML : ''; };
     const cancelado = e.estado === 'cancelado';
-    return { id: e.portal, titulo: tituloEv(e), fecha: e.fecha, cancelado, cuenta: cancelado ? '' : hoja(VIEWS.imprimir(e.id)), timing: !cancelado && tieneTiming(e) ? hoja(VIEWS.timing(e.id)) : '' };
+    const pl = e.plano || {}, conPlano = !cancelado && planoItems(e).length && (pl.cliente === 'ver' || pl.cliente === 'editar');
+    const plano = conPlano ? { modo: pl.cliente === 'editar' && e.fecha > todayISO() ? 'editar' : 'ver', clienteAct: pl.clienteAct || '', cap: resumenPlano(e).cap, inv: invitadosEv(e), espTot: resumenPlano(e).espTot, tipos: tiposEspEv(e),
+      items: planoItems(e).map(i => ({ id: i.id, t: i.t, x: i.x, y: i.y, r: i.r || 0, n: i.n || '', nom: i.nom || '', pers: num(i.pers), esp: i.esp || [] })) } : null;
+    return { id: e.portal, titulo: tituloEv(e), fecha: e.fecha, cancelado, cuenta: cancelado ? '' : hoja(VIEWS.imprimir(e.id)), timing: !cancelado && tieneTiming(e) ? hoja(VIEWS.timing(e.id)) : '', plano };
   } finally { Object.assign(PRINT_OPTS, pO); Object.assign(TIMING_OPTS, tO); }
+}
+const PLANO_SUBS = {};
+// escucha portalPlano/{token} de los eventos que dejan completar el plano, y pasa lo nuevo al evento
+function vigilarPlanosCliente() {
+  const quiero = new Set(Object.values(S.eventos).filter(e => e.portal && e.plano && e.plano.cliente === 'editar' && e.estado !== 'cancelado' && e.fecha >= todayISO()).map(e => e.portal));
+  Object.keys(PLANO_SUBS).forEach(t => { if (!quiero.has(t)) { PLANO_SUBS[t](); delete PLANO_SUBS[t]; } });
+  quiero.forEach(t => { if (!PLANO_SUBS[t]) PLANO_SUBS[t] = DB.escucharPlanoCliente(t, d => mezclarPlanoCliente(t, d)); });
+}
+function mezclarPlanoCliente(token, d) {
+  const e = Object.values(S.eventos).find(x => x.portal === token);
+  if (!e || !d || !d.actualizado || !Array.isArray(d.items) || !e.plano || e.plano.cliente !== 'editar') return;
+  if (String(d.actualizado) <= String(e.plano.clienteAct || '')) return;
+  const txt = (v, n) => String(v ?? '').slice(0, n);
+  const delCli = {}; d.items.forEach(i => { if (i && i.id) delCli[i.id] = i; });
+  const items = planoItems(e).map(i => { const c = delCli[i.id]; if (!c || !esMesa(i)) return i;
+    const esp = (Array.isArray(c.esp) ? c.esp : []).slice(0, 40).filter(x => x && x.nombre).map(x => ({ id: txt(x.id, 20) || uid(), nombre: txt(x.nombre, 80), tipo: txt(x.tipo, 60) }));
+    return { ...i, nom: txt(c.nom, 80), pers: Math.max(0, Math.min(99, Math.round(num(c.pers)))) || null, esp }; });
+  DB.save('eventos', { ...clean(e), plano: { ...e.plano, items, clienteAct: String(d.actualizado) } });
+  toast(`El cliente actualizó el plano de mesas de ${tituloEv(e)}.`);
 }
 function syncPortales() {
   if (!DB.cargado || PORTAL_MODE) return;
+  vigilarPlanosCliente();
   Object.values(S.eventos).filter(e => e.portal).forEach(e => {
     const snap = snapshotPortal(e), k = JSON.stringify(snap);
     if (PORTAL_ULT[e.portal] === k) return;
@@ -2580,7 +2932,7 @@ function modalPortal(id) {
     });
   }
   const link = linkPortal(e.portal);
-  const txt = `¡Hola ${c.nombre || ''}! Acá pueden ver el estado de cuenta${tieneTiming(e) ? ' y el timing' : ''} de ${e.homenajeado ? 'la fiesta de ' + e.homenajeado : 'su evento'} en Salón Dorado. Se actualiza solo cada vez que hacen un pago: ${link}`;
+  const txt = `¡Hola ${c.nombre || ''}! Acá pueden ver el estado de cuenta${tieneTiming(e) ? ' y el timing' : ''}${e.plano && e.plano.cliente === 'editar' ? ', y anotar quién se sienta en cada mesa,' : ''} de ${e.homenajeado ? 'la fiesta de ' + e.homenajeado : 'su evento'} en Salón Dorado. Se actualiza solo cada vez que hacen un pago: ${link}`;
   modal({
     title: 'Portal del cliente', submit: '',
     body: `<div class="full"><p class="small muted" style="margin-top:0">Este es el link de <b>${esc(nombreCli(c))}</b>. Se actualiza solo.</p>
@@ -2607,19 +2959,95 @@ async function renderPortal(token) {
     root.innerHTML = `<div class="portal"><div class="center" style="margin-top:40px"><img src="${LOGO}" alt="Salón Dorado" style="width:160px"><p>Este link no está disponible.</p><p class="small muted">Consultá con Salón Dorado.</p></div></div>`;
     return;
   }
-  const hojas = [['cuenta', 'Estado de cuenta'], ...(d.timing ? [['timing', 'Timing']] : [])];
+  const P = d.plano ? { ...d.plano, items: clean(d.plano.items || []) } : null;
+  if (P && P.modo === 'editar') {   // si el cliente cambió algo que la app todavía no pasó al evento, se lo mostramos igual
+    let pp = null; try { pp = await DB.getPortalPlano(token); } catch (err) { console.error(err); }
+    if (pp && pp.actualizado && String(pp.actualizado) > String(P.clienteAct || '') && Array.isArray(pp.items)) {
+      const m = {}; pp.items.forEach(i => { if (i && i.id) m[i.id] = i; });
+      P.items = P.items.map(i => m[i.id] ? { ...i, nom: m[i.id].nom || '', pers: num(m[i.id].pers), esp: m[i.id].esp || [] } : i);
+    }
+  }
+  const hojas = [['cuenta', 'Estado de cuenta'], ...(d.timing ? [['timing', 'Timing']] : []), ...(P ? [['plano', 'Plano de mesas']] : [])];
   let cual = 'cuenta';
   const pintar = () => {
     root.innerHTML = `<div class="portal">
       <div class="portal-h"><img src="${LOGO}" alt="Salón Dorado"><div><h1>${esc(d.titulo || 'Tu evento')}</h1><div class="muted">${esc(DIAS[dow(d.fecha)])} ${fmtD(d.fecha)}</div></div></div>
       <div class="portal-bar">${hojas.length > 1 ? `<div class="tema-sel" style="margin:0">${hojas.map(([k, n]) => `<button type="button" data-hoja="${k}" class="${k === cual ? 'on' : ''}">${n}</button>`).join('')}</div>` : '<span></span>'}
-        <button class="btn-gold" id="ppdf">⬇ Descargar PDF</button></div>
-      <main id="main">${d[cual]}</main>
+        ${cual === 'plano' ? '' : '<button class="btn-gold" id="ppdf">⬇ Descargar PDF</button>'}</div>
+      <main id="main">${cual === 'plano' ? '<div id="pplano"></div>' : d[cual]}</main>
       <p class="small muted center">Actualizado el ${(() => { const t = new Date(d.actualizado); return isNaN(t) ? '' : fmtD(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`); })()}. Ante cualquier duda, escribinos.</p></div>`;
     $$('[data-hoja]').forEach(b => b.onclick = () => { cual = b.dataset.hoja; pintar(); });
+    if (cual === 'plano') return planoCliente(P, token, $('#pplano'));
     $('#ppdf').onclick = () => descargarPDF(`${hojas.find(h => h[0] === cual)[1]} - ${d.titulo || 'Evento'} - ${fmtD(d.fecha).replace(/\//g, '-')}`, $('#main .print-doc'));
   };
   pintar();
+}
+
+// el cliente completa el plano: quiénes, cuántos y menús especiales por mesa (no mueve mesas). Se guarda en portalPlano/{token}.
+function planoCliente(P, token, cont) {
+  const editar = P.modo === 'editar';
+  let sel = null, estado = '', t;
+  const marca = () => { const x = $('#ppEstado'); if (x) { x.textContent = estado; x.style.color = /No se pudo/.test(estado) ? 'var(--rojo)' : '#2e7d32'; } };
+  const guardar = () => {
+    estado = 'Guardando…'; marca(); clearTimeout(t);
+    t = setTimeout(async () => {
+      try {
+        await DB.savePortalPlano(token, { items: P.items.filter(esMesa).map(i => ({ id: i.id, nom: i.nom || '', pers: num(i.pers), esp: i.esp || [] })), actualizado: new Date().toISOString() });
+        estado = 'Guardado ✓';
+      } catch (err) { console.error(err); estado = 'No se pudo guardar. Revisá la conexión y volvé a intentar.'; }
+      marca();
+    }, 700);
+  };
+  const cambiar = (patch, redibujar) => { P.items = P.items.map(i => i.id === sel ? { ...i, ...patch } : i); guardar(); if (redibujar) dibujar(); };
+  const nombreMesa = m => m.t === 'ppal' ? 'Mesa principal' : 'Mesa ' + (m.n || '?');
+  function dibujar(bajar) {
+    const ms = P.items.filter(esMesa).sort(ordenMesa), asig = sum(ms, i => i.pers), espUb = sum(ms, i => (i.esp || []).length), s = P.items.find(i => i.id === sel);
+    let lado;
+    if (editar && s) {
+      const p = num(s.pers), cap = capMesa(s);
+      lado = `<div class="panel-h"><h3>${esc(nombreMesa(s))}</h3><button class="btn-sm" id="ppListo">Listo</button></div>
+        <div class="fgrid" style="grid-template-columns:1fr 1fr">
+          <label class="f full"><span>Quiénes se sientan</span><input id="ppQ" value="${esc(s.nom || '')}" placeholder="Ej.: Amigos del colegio" maxlength="80"></label>
+          <label class="f"><span>Cuántas personas</span><input id="ppP" inputmode="numeric" value="${p || ''}" placeholder="0" maxlength="3"></label></div>
+        <p class="small ${cap && p > cap ? '' : 'muted'}" id="ppCap" style="margin:6px 0 10px"></p>
+        <div class="plano-esp"><div class="small" style="font-weight:600;margin-bottom:4px"><span class="esp-dot"></span> ¿Alguien de esta mesa come un menú especial?</div>
+          ${(s.esp || []).length ? `<ul class="list-clean">${s.esp.map(x => `<li><div><b>${esc(x.nombre)}</b><div class="small muted">${esc(x.tipo || '')}</div></div><button type="button" class="btn-sm" data-espdel="${esc(x.id)}" title="Quitar">✕</button></li>`).join('')}</ul>` : ''}
+          <div class="fgrid" style="grid-template-columns:1fr 1fr;margin-top:6px">
+            <label class="f"><span>Nombre y apellido</span><input id="ppEN" placeholder="Ej.: Laura Gómez" maxlength="80" autocomplete="off"></label>
+            <label class="f"><span>Menú</span><select id="ppET">${(P.tipos || []).map(x => `<option>${esc(x)}</option>`).join('')}</select></label></div>
+          <button class="btn-sm" id="ppEA" style="margin-top:6px">+ Agregar menú especial</button></div>`;
+    } else {
+      lado = `<div class="panel-h"><h3>Mesas</h3></div><ul class="list-clean">${ms.map(m => `<li ${editar ? `data-ppsel="${m.id}" style="cursor:pointer"` : ''}><div><b>${esc(nombreMesa(m))}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}${(m.esp || []).length ? `<div class="small muted"><span class="esp-dot"></span> ${m.esp.map(x => `${esc(x.nombre)} (${esc(x.tipo || '')})`).join(', ')}</div>` : ''}</div>
+        <div class="right nowrap small">${num(m.pers) ? `<b>${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`;
+    }
+    cont.innerHTML = `<div class="panel" style="margin-bottom:12px"><p style="margin:0 0 6px">${editar ? 'Tocá cada mesa para anotar <b>quiénes se sientan</b>, <b>cuántas personas</b> y si alguien come un <b>menú especial</b>. Se guarda solo. La ubicación de las mesas la define Salón Dorado.' : 'Así quedó el plano de mesas de tu evento.'}</p>
+        <div class="small muted">${ms.length} mesas · <b>${asig}</b> personas ubicadas${P.inv ? ` de ${P.inv.n} invitados` : ''}${espUb ? ` · <span class="esp-dot"></span> ${espUb} ${espUb === 1 ? 'menú especial' : 'menús especiales'}` : ''} <span id="ppEstado" style="margin-left:6px"></span></div>
+        ${asig > P.cap ? `<div class="alert warn" style="margin:8px 0 0">El salón tiene capacidad para <b>${P.cap}</b> personas como máximo.</div>` : ''}</div>
+      <div class="plano-wrap"><div>${planoSVG(P.items, sel, 'id="cliSvg"')}</div><div class="panel plano-side">${lado}</div></div>`;
+    marca();
+    const capTxt = () => { const x = $('#ppCap'); if (!x || !s) return; const p = num(s.pers), cap = capMesa(s);
+      x.innerHTML = s.t === 'ppal' ? (p > 13 ? `<b style="color:#b8740e">Más de 13:</b> ${p - 13 === 1 ? "1 persona se sienta" : (p - 13) + " se sientan"} de espalda a la pista (consultalo con nosotros).` : 'Se arma para 7, 9 o 13 personas.') : p > cap ? `<b style="color:var(--rojo)">Son muchos:</b> en esta mesa entran ${cap} como máximo.` : `Entran ${cap} como máximo.`; };
+    capTxt();
+    if (editar) {
+      const svg = $('#cliSvg');
+      svg.onclick = ev_ => { const g = ev_.target.closest('[data-pm]'); const it = g && P.items.find(i => i.id === g.dataset.pm); sel = it && esMesa(it) ? it.id : null; dibujar(!!sel); };
+      $$('[data-ppsel]', cont).forEach(li => li.onclick = () => { sel = li.dataset.ppsel; dibujar(true); });
+    }
+    if (editar && s) {
+      $('#ppListo').onclick = () => { sel = null; dibujar(); };
+      $('#ppQ').oninput = ev_ => { s.nom = ev_.target.value.slice(0, 80); cambiar({ nom: s.nom }); };
+      $('#ppQ').onchange = () => dibujar();
+      $('#ppP').oninput = ev_ => { s.pers = Math.max(0, Math.min(99, Math.round(num(ev_.target.value)))); cambiar({ pers: s.pers }); capTxt(); };
+      $('#ppP').onchange = () => dibujar();
+      const agregar = () => { const nombre = $('#ppEN').value.trim().slice(0, 80); if (!nombre) { toast('Escribí el nombre y apellido.'); $('#ppEN').focus(); return; }
+        cambiar({ esp: [...(s.esp || []), { id: uid(), nombre, tipo: $('#ppET').value }] }, true); };
+      $('#ppEA').onclick = agregar;
+      $('#ppEN').onkeydown = ev_ => { if (ev_.key === 'Enter') { ev_.preventDefault(); agregar(); } };
+      $$('[data-espdel]', cont).forEach(b => b.onclick = () => cambiar({ esp: (s.esp || []).filter(x => x.id !== b.dataset.espdel) }, true));
+    }
+    if (bajar && angosto()) { const x = $('.plano-side', cont); if (x) x.scrollIntoView({ block: 'start' }); }
+  }
+  dibujar();
 }
 
 /* ---------- arranque ---------- */
