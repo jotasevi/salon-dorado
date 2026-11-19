@@ -31,7 +31,9 @@ Idioma de la interfaz y de las respuestas: **español rioplatense**. El usuario 
 - Commits chicos y con mensaje en español.
 
 ## Personal (mozos y camareras)
-- Sección "Personal" del menú. Se guarda en la colección `config` (así no hay que cambiar las reglas de Firestore): `config/personal` → `{ lista: [{ id, nombre, rol, tel, activo }] }` y `config/turnos-AAAA-MM` → `{ dias: { 'AAAA-MM-DD': [ids] } }`.
+- Sección "Personal" del menú. Se guarda en la colección `config` (así no hay que cambiar las reglas de Firestore): `config/personal` → `{ lista: [{ id, nombre, rol, tel, activo, tipo }] }` y `config/turnos-AAAA-MM` → `{ dias: { 'AAAA-MM-DD': [ids que vienen] }, no: { 'AAAA-MM-DD': [ids que no pueden] } }`.
+- `tipo`: `fijo` (por defecto, siempre en la grilla) o `refuerzo` (aparece en la grilla solo si está anotado esa semana; si no, en la lista de abajo). Cada casillero rota Sí → No puede → vacío. Solo "Sí" cuenta para convocados y días trabajados.
+- Hoja para imprimir la semana: `#/personalhoja/AAAA-MM-DD` (lunes), en `HOJAS`.
 
 ## PDF de las hojas (estado de cuenta, hoja de servicio, timing, contrato)
 - Cada hoja tiene dos botones: "Imprimir" (`imprimirHoja()`, que usa un iframe aparte porque Safari se traba) y "Descargar PDF" (`descargarPDF()`).

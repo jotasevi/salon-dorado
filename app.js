@@ -553,7 +553,7 @@ function nombreUsuario() {
 }
 
 /* ---------- impresión aislada: copia solo la hoja a un iframe y se imprime eso (Safari se traba con la app entera) ---------- */
-const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato', imprimir: 'Estado de cuenta' };
+const HOJAS = { orden: 'Hoja de servicio', timing: 'Timing', contrato: 'Contrato', imprimir: 'Estado de cuenta', personalhoja: 'Personal' };
 function prepararImpresion() {
   const { view, args } = route();
   const doc = $('#main .print-doc');
@@ -831,7 +831,7 @@ function render() {
     aplicarTema();
   }
   const { view, args } = route();
-  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos', contrato: 'eventos' }[view] || view;
+  const navKey = { evento: 'eventos', cliente: 'clientes', imprimir: 'eventos', orden: 'eventos', timing: 'eventos', contrato: 'eventos', personalhoja: 'personal' }[view] || view;
   $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === navKey));
   const main = $('#main');
   const fn = VIEWS[view] || VIEWS.inicio;
@@ -1845,21 +1845,41 @@ const lunesDe = f => addDays(f, -((dow(f) + 6) % 7));
 const DIAS_C = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 let PERS_SEM = null, PERS_MES = null;
 function guardarPersonal(lista) { DB.save('config', { ...(S.config.personal || {}), id: 'personal', lista }); }
-function marcarTurno(f, pid, on) {
+// cada día guarda quiénes vienen (dias[f]) y a quiénes se les preguntó y no pueden (no[f])
+const noPuedeDia = f => ((S.config['turnos-' + ym(f)] || {}).no || {})[f] || [];
+const estadoTurno = (f, pid) => turnosDia(f).includes(pid) ? 'si' : noPuedeDia(f).includes(pid) ? 'no' : '';
+const esRefuerzo = p => p.tipo === 'refuerzo';
+function marcarTurno(f, pid, est) {
   const id = 'turnos-' + ym(f), doc = S.config[id] || { id, dias: {} };
-  const dias = { ...(doc.dias || {}) }, set = new Set(dias[f] || []);
-  if (on) set.add(pid); else set.delete(pid);
-  if (set.size) dias[f] = [...set]; else delete dias[f];
-  DB.save('config', { ...doc, id, dias });
+  const dias = { ...(doc.dias || {}) }, no = { ...(doc.no || {}) };
+  const si = new Set(dias[f] || []), nn = new Set(no[f] || []);
+  si.delete(pid); nn.delete(pid);
+  if (est === 'si') si.add(pid); else if (est === 'no') nn.add(pid);
+  if (si.size) dias[f] = [...si]; else delete dias[f];
+  if (nn.size) no[f] = [...nn]; else delete no[f];
+  DB.save('config', { ...doc, id, dias, no });
 }
+// días que se muestran: viernes, sábado y domingo, y cualquier otro con evento, feriado o gente anotada
+const colsSemana = lunes => [...Array(7)].map((_, i) => addDays(lunes, i)).filter(f => [5, 6, 0].includes(dow(f)) || eventoEnFecha(f) || esFeriado(f) || turnosDia(f).length || noPuedeDia(f).length);
+// filas: los fijos siempre; los de refuerzo solo si están anotados esa semana (o si los sumaste a mano)
+function filasSemana(cols, extra = new Set()) {
+  const lista = personalLista();
+  const marcados = new Set(cols.flatMap(f => [...turnosDia(f), ...noPuedeDia(f)]));
+  const fijos = lista.filter(p => p.activo !== false && !esRefuerzo(p)).sort(ordenPersonal);
+  const refuerzo = lista.filter(p => esRefuerzo(p) && (marcados.has(p.id) || (p.activo !== false && extra.has(p.id)))).sort(ordenPersonal);
+  const deBaja = lista.filter(p => p.activo === false && !esRefuerzo(p) && marcados.has(p.id)).sort(ordenPersonal);
+  const otros = lista.filter(p => esRefuerzo(p) && p.activo !== false && !refuerzo.includes(p)).sort(ordenPersonal);
+  return { fijos: [...fijos, ...deBaja], refuerzo, otros };
+}
+let PERS_EXTRA = new Set();
 VIEWS.personal = () => {
   const hoy = todayISO();
   PERS_SEM = PERS_SEM || lunesDe(hoy); PERS_MES = PERS_MES || ym(hoy);
   const semana = [...Array(7)].map((_, i) => addDays(PERS_SEM, i));
-  const cols = semana.filter(f => [5, 6, 0].includes(dow(f)) || eventoEnFecha(f) || esFeriado(f) || turnosDia(f).length);
-  const lista = personalLista(), activos = lista.filter(p => p.activo !== false).sort(ordenPersonal);
-  const conTurno = new Set(cols.flatMap(turnosDia));
-  const filas = [...activos, ...lista.filter(p => p.activo === false && conTurno.has(p.id))];
+  const cols = colsSemana(PERS_SEM);
+  const lista = personalLista();
+  const { fijos, refuerzo, otros } = filasSemana(cols, PERS_EXTRA);
+  const fila = p => `<tr><td><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}${p.activo === false ? ' · de baja' : ''}</span></td>${cols.map(f => { const st = estadoTurno(f, p.id); return `<td class="center"><button type="button" class="turno t-${st || 'nada'}" data-turno="${f}|${p.id}" aria-label="${esc(p.nombre)} ${fmtD(f)}">${st === 'si' ? 'Sí' : st === 'no' ? 'No puede' : ''}</button></td>`; }).join('')}</tr>`;
   // resumen del mes
   const [yy, mm] = PERS_MES.split('-').map(Number), diasMes = new Date(yy, mm, 0).getDate();
   const delMes = [...Array(diasMes)].map((_, i) => `${PERS_MES}-${pad(i + 1)}`).filter(f => turnosDia(f).length);
@@ -1868,15 +1888,17 @@ VIEWS.personal = () => {
       <div class="small" style="font-weight:400;text-transform:none;letter-spacing:0">${e ? `<a href="#/evento/${e.id}">${esc(nombreCli(cli(e.clienteId)))}</a><br><span class="muted">${esc(tipoEv(e))}${e.estado === 'pendiente' ? ' (pend.)' : ''}</span>` : `<span class="muted">${esFeriado(f) ? esc(nombreFeriado(f)) : 'Sin evento'}</span>`}</div></th>`; };
   return `<div class="top"><h1>Personal</h1><div class="actions"><button class="btn-primary" id="nuevaPers">+ Agregar persona</button></div></div>
   <div class="panel tbl-wrap"><div class="panel-h"><h2>¿Quiénes vienen?</h2>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-sm" id="semAnt">◀</button><b style="min-width:190px;text-align:center">Semana del ${fmtD(semana[0]).slice(0, 5)} al ${fmtD(semana[6])}</b><button class="btn-sm" id="semSig">▶</button>${PERS_SEM !== lunesDe(hoy) ? '<button class="btn-sm" id="semHoy">Esta semana</button>' : ''}</div></div>
-    <p class="small muted" style="margin-top:-4px">Tildá a quién llamaste para cada día. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-sm" id="semAnt">◀</button><b style="min-width:190px;text-align:center">Semana del ${fmtD(semana[0]).slice(0, 5)} al ${fmtD(semana[6])}</b><button class="btn-sm" id="semSig">▶</button><button class="btn-sm" data-go="personalhoja/${PERS_SEM}">🖨️ Imprimir semana</button>${PERS_SEM !== lunesDe(hoy) ? '<button class="btn-sm" id="semHoy">Esta semana</button>' : ''}</div></div>
+    <p class="small muted" style="margin-top:-4px">Tocá cada casillero para ir cambiando: <b>Sí</b> → <b>No puede</b> → vacío. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
     ${!lista.length ? '<p class="muted">Todavía no cargaste a nadie. Tocá <b>+ Agregar persona</b>.</p>' : `<table><thead><tr><th>Persona</th>${cols.map(encab).join('')}</tr></thead><tbody>
-      ${filas.map(p => `<tr><td><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}${p.activo === false ? ' · de baja' : ''}</span></td>${cols.map(f => `<td class="center"><input type="checkbox" data-turno="${f}|${p.id}" ${turnosDia(f).includes(p.id) ? 'checked' : ''} style="width:20px;height:20px" aria-label="${esc(p.nombre)} ${fmtD(f)}"></td>`).join('')}</tr>`).join('')}
-      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${[[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras'], [ids.length - m - c, 'otro', 'otros']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).join(' · ')}</div>` : ''}${ids.length ? `<button class="btn-sm" data-copiar="${f}" style="margin-top:4px">Copiar lista</button>` : ''}</td>`; }).join('')}</tr></tfoot></table>`}
+      ${fijos.map(fila).join('')}
+      ${refuerzo.length ? `<tr class="sep-row"><td colspan="${cols.length + 1}">De refuerzo</td></tr>${refuerzo.map(fila).join('')}` : ''}
+      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${[[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras'], [ids.length - m - c, 'otro', 'otros']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).join(' · ')}</div>` : ''}${ids.length ? `<button class="btn-sm" data-copiar="${f}" style="margin-top:4px">Copiar lista</button>` : ''}</td>`; }).join('')}</tr></tfoot></table>
+      ${otros.length ? `<div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">De refuerzo · tocá un nombre para sumarlo a esta semana:</div><div style="display:flex;gap:6px;flex-wrap:wrap">${otros.map(p => `<button class="btn-sm" data-extra="${p.id}">+ ${esc(p.nombre)}</button>`).join('')}</div></div>` : ''}`}
   </div>
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h2>Equipo</h2></div>
-      ${lista.length ? `<ul class="list-clean">${[...lista].sort((a, b) => (a.activo === false) - (b.activo === false) || ordenPersonal(a, b)).map(p => `<li><div><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}</span>${p.activo === false ? ' <span class="badge b-cancelado">de baja</span>' : ''}${p.tel ? `<div class="small muted">${esc(fmtTel(p.tel))}</div>` : ''}</div>
+      ${lista.length ? `<ul class="list-clean">${[...lista].sort((a, b) => (a.activo === false) - (b.activo === false) || ordenPersonal(a, b)).map(p => `<li><div><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}</span>${esRefuerzo(p) ? ' <span class="badge b-warn">refuerzo</span>' : ''}${p.activo === false ? ' <span class="badge b-cancelado">de baja</span>' : ''}${p.tel ? `<div class="small muted">${esc(fmtTel(p.tel))}</div>` : ''}</div>
         <div style="display:flex;gap:6px">${p.tel ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(p.tel)}">WhatsApp</a>` : ''}<button class="btn-sm" data-pers="${p.id}">Editar</button></div></li>`).join('')}</ul>` : '<p class="muted">Sin personal cargado.</p>'}
     </div>
     <div class="panel"><div class="panel-h"><h2>Días trabajados</h2><input type="month" id="persMes" value="${PERS_MES}" style="width:auto"></div>
@@ -1886,12 +1908,13 @@ VIEWS.personal = () => {
 };
 VIEWS.personal.after = () => {
   $('#nuevaPers').onclick = () => formPersonal();
-  $('#semAnt').onclick = () => { PERS_SEM = addDays(PERS_SEM, -7); render(); };
-  $('#semSig').onclick = () => { PERS_SEM = addDays(PERS_SEM, 7); render(); };
-  const sh = $('#semHoy'); if (sh) sh.onclick = () => { PERS_SEM = lunesDe(todayISO()); render(); };
+  $('#semAnt').onclick = () => { PERS_SEM = addDays(PERS_SEM, -7); PERS_EXTRA = new Set(); render(); };
+  $('#semSig').onclick = () => { PERS_SEM = addDays(PERS_SEM, 7); PERS_EXTRA = new Set(); render(); };
+  const sh = $('#semHoy'); if (sh) sh.onclick = () => { PERS_SEM = lunesDe(todayISO()); PERS_EXTRA = new Set(); render(); };
   $('#persMes').onchange = e => { PERS_MES = e.target.value || ym(todayISO()); render(); };
   $$('[data-pers]').forEach(b => b.onclick = () => formPersonal(b.dataset.pers));
-  $$('[data-turno]').forEach(c => c.onchange = () => { const [f, pid] = c.dataset.turno.split('|'); marcarTurno(f, pid, c.checked); });
+  $$('[data-turno]').forEach(c => c.onclick = () => { const [f, pid] = c.dataset.turno.split('|'); const st = estadoTurno(f, pid); marcarTurno(f, pid, st === '' ? 'si' : st === 'si' ? 'no' : ''); });
+  $$('[data-extra]').forEach(b => b.onclick = () => { PERS_EXTRA.add(b.dataset.extra); render(); });
   $$('[data-copiar]').forEach(b => b.onclick = async () => {
     const f = b.dataset.copiar, e = eventoEnFecha(f), ids = turnosDia(f);
     const pp = personalLista().filter(p => ids.includes(p.id)).sort(ordenPersonal);
@@ -1899,17 +1922,36 @@ VIEWS.personal.after = () => {
     try { await navigator.clipboard.writeText(txt); toast('Lista copiada: pegala en WhatsApp.'); } catch (err) { modal({ title: 'Lista del día', body: F.area('t', 'Copiala desde acá', txt, 'style="min-height:200px"'), submit: '' }); }
   });
 };
+/* hoja de la semana para imprimir (como la planilla en papel) */
+VIEWS.personalhoja = lunes => {
+  lunes = /^\d{4}-\d{2}-\d{2}$/.test(lunes || '') ? lunes : lunesDe(todayISO());
+  const cols = colsSemana(lunes), { fijos, refuerzo, otros } = filasSemana(cols);
+  const celda = (f, p) => { const st = estadoTurno(f, p.id); return `<td class="center">${st === 'si' ? '<b>Sí</b>' : st === 'no' ? '—' : ''}</td>`; };
+  const fila = p => `<tr><td>${esc(p.nombre)}${p.rol && p.rol !== 'Otro' ? ` <span style="color:#888;font-size:11px">${esc(p.rol)}</span>` : ''}</td>${cols.map(f => celda(f, p)).join('')}</tr>`;
+  const vacia = `<tr><td>&nbsp;</td>${cols.map(() => '<td></td>').join('')}</tr>`;
+  const tot = f => turnosDia(f).length;
+  return `<div class="no-print print-opts"><a href="#/personal">← Volver a Personal</a>
+    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
+  <div class="print-doc pers-doc">
+    <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><b style="font-size:16px">Personal</b><br>Semana del ${fmtD(lunes).slice(0, 5)} al ${fmtD(addDays(lunes, 6))}</div></div>
+    <table class="pers-tbl"><thead><tr><th></th>${cols.map(f => { const e = eventoEnFecha(f); return `<th class="center">${DIAS[dow(f)]} ${fmtD(f).slice(0, 5)}<div style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">${e ? esc(tipoEv(e)) + ' · ' + esc(nombreCli(cli(e.clienteId))) : ''}</div></th>`; }).join('')}</tr></thead>
+    <tbody>${fijos.map(fila).join('')}${refuerzo.map(fila).join('')}${vacia}${vacia}</tbody>
+    <tfoot><tr><td>Total</td>${cols.map(f => `<td class="center">${tot(f) || ''}</td>`).join('')}</tr></tfoot></table>
+    ${otros.length ? `<h2>De refuerzo</h2><div class="pers-otros">${otros.map(p => `<div>${esc(p.nombre)}${p.tel ? ` <span style="color:#888">${esc(fmtTel(p.tel))}</span>` : ''}</div>`).join('')}</div>` : ''}
+  </div>`;
+};
 function formPersonal(id) {
   const lista = personalLista(), p = id ? lista.find(x => x.id === id) : { rol: 'Mozo', activo: true };
   modal({
     title: id ? 'Editar persona' : 'Agregar persona',
     body: F.text('nombre', 'Nombre y apellido', p.nombre, 'full') + F.sel('rol', 'Rol', ROLES_PERSONAL.includes(p.rol) || !p.rol ? ROLES_PERSONAL : [...ROLES_PERSONAL, p.rol], p.rol) +
-      F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'inputmode="tel" placeholder="+54911 xxxx-xxxx"') + F.chk('activo', 'Trabaja actualmente con nosotros', p.activo !== false, 'full') +
+      F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'inputmode="tel" placeholder="+54911 xxxx-xxxx"') +
+      F.sel('tipo', 'En la grilla', [['fijo', 'Fijo: aparece siempre'], ['refuerzo', 'De refuerzo: se suma cuando lo convocás']], p.tipo || 'fijo', 'full') + F.chk('activo', 'Trabaja actualmente con nosotros', p.activo !== false, 'full') +
       F.hint('Si alguien deja de venir, destildá "Trabaja actualmente": deja de aparecer en la grilla pero se guardan sus días trabajados.'),
     danger: id ? { label: 'Eliminar', confirm: '¿Eliminar a esta persona? Mejor dala de baja si querés conservar sus días trabajados.', fn: () => guardarPersonal(personalLista().filter(x => x.id !== id)) } : null,
     onSubmit: d => {
       if (!d.nombre) { toast('Falta el nombre.'); return false; }
-      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo };
+      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo, tipo: d.tipo || 'fijo' };
       guardarPersonal(id ? personalLista().map(x => x.id === id ? obj : x) : [...personalLista(), obj]);
     },
   });

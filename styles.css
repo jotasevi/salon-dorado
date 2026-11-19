@@ -265,3 +265,16 @@ main,.grid2>*,.grid3>*,.panel{min-width:0}
 .navbtns button:disabled{opacity:.3;cursor:default}
 main{padding-bottom:80px}
 @media print{.navbtns{display:none!important}}
+
+/* personal: casilleros Sí / No puede / vacío */
+.turno{width:86px;height:32px;justify-content:center;font-size:.85rem;font-weight:600;padding:0}
+.turno.t-si{background:var(--verde-soft);border-color:var(--verde);color:#2f6b36}
+.turno.t-no{background:#fbe3e1;border-color:#f0cfcb;color:#a3352e;font-weight:500}
+html[data-theme="dark"] .turno.t-si{color:#9fdcaa}
+html[data-theme="dark"] .turno.t-no{background:#4a2622;border-color:#62342f;color:#f2a49c}
+tr.sep-row td{background:var(--gris);font-size:.78rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600}
+/* hoja de personal para imprimir */
+.pers-tbl th{background:#3f6fbf!important;color:#fff!important}
+.pers-tbl td,.pers-tbl th{border:1px solid #bbb;padding:7px 8px}
+.pers-tbl tbody tr:nth-child(even) td{background:#f3f3f3}
+.pers-otros{display:grid;grid-template-columns:1fr 1fr;gap:6px 30px;font-size:13px}
