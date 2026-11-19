@@ -1990,6 +1990,14 @@ function guardarPersonal(lista) { DB.save('config', { ...(S.config.personal || {
 const noPuedeDia = f => ((S.config['turnos-' + ym(f)] || {}).no || {})[f] || [];
 const estadoTurno = (f, pid) => turnosDia(f).includes(pid) ? 'si' : noPuedeDia(f).includes(pid) ? 'no' : '';
 const esRefuerzo = p => p.tipo === 'refuerzo';
+// horario de ingreso al salón de cada día: config/turnos-AAAA-MM → ingreso: { 'AAAA-MM-DD': 'HH:MM' }
+const ingresoDia = f => ((S.config['turnos-' + ym(f)] || {}).ingreso || {})[f] || '';
+function guardarIngreso(f, h) {
+  const id = 'turnos-' + ym(f), doc = S.config[id] || { id, dias: {} };
+  const ingreso = { ...(doc.ingreso || {}) };
+  if (/^\d{2}:\d{2}$/.test(h)) ingreso[f] = h; else delete ingreso[f];
+  DB.save('config', { ...doc, id, ingreso });
+}
 function marcarTurno(f, pid, est) {
   const id = 'turnos-' + ym(f), doc = S.config[id] || { id, dias: {} };
   const dias = { ...(doc.dias || {}) }, no = { ...(doc.no || {}) };
@@ -2026,11 +2034,12 @@ VIEWS.personal = () => {
   const delMes = [...Array(diasMes)].map((_, i) => `${PERS_MES}-${pad(i + 1)}`).filter(f => turnosDia(f).length);
   const resumen = lista.map(p => ({ p, fechas: delMes.filter(f => turnosDia(f).includes(p.id)) })).filter(r => r.fechas.length || r.p.activo !== false).sort((a, b) => b.fechas.length - a.fechas.length || ordenPersonal(a.p, b.p));
   const encab = f => { const e = eventoEnFecha(f); return `<th class="center" style="min-width:110px">${DIAS_C[dow(f)]} ${fmtD(f).slice(0, 5)}${f === hoy ? ' <span class="badge b-ok">hoy</span>' : ''}
-      <div class="small" style="font-weight:400;text-transform:none;letter-spacing:0">${e ? `<a href="#/evento/${e.id}">${esc(nombreCli(cli(e.clienteId)))}</a><br><span class="muted">${esc(tipoEv(e))}${e.estado === 'pendiente' ? ' (pend.)' : ''}</span>` : `<span class="muted">${esFeriado(f) ? esc(nombreFeriado(f)) : 'Sin evento'}</span>`}</div></th>`; };
+      <div class="small" style="font-weight:400;text-transform:none;letter-spacing:0">${e ? `<a href="#/evento/${e.id}">${esc(nombreCli(cli(e.clienteId)))}</a><br><span class="muted">${esc(tipoEv(e))}${e.estado === 'pendiente' ? ' (pend.)' : ''}</span>` : `<span class="muted">${esFeriado(f) ? esc(nombreFeriado(f)) : 'Sin evento'}</span>`}</div>
+      <label class="small ingreso-dia" style="display:block;font-weight:400;text-transform:none;letter-spacing:0;margin-top:4px">Ingreso <input type="time" data-ingreso="${f}" value="${esc(ingresoDia(f))}" aria-label="Horario de ingreso ${fmtD(f)}" style="width:auto;padding:2px 4px;font-size:.85rem"></label></th>`; };
   return `<div class="top"><h1>Personal</h1><div class="actions"><button class="btn-primary" id="nuevaPers">+ Agregar persona</button></div></div>
   <div class="panel tbl-wrap"><div class="panel-h"><h2>¿Quiénes vienen?</h2>
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-sm" id="semAnt">◀</button><b style="min-width:190px;text-align:center">Semana del ${fmtD(semana[0]).slice(0, 5)} al ${fmtD(semana[6])}</b><button class="btn-sm" id="semSig">▶</button><button class="btn-sm" data-go="personalhoja/${PERS_SEM}">🖨️ Imprimir semana</button>${PERS_SEM !== lunesDe(hoy) ? '<button class="btn-sm" id="semHoy">Esta semana</button>' : ''}</div></div>
-    <p class="small muted" style="margin-top:-4px">Tocá cada casillero para ir cambiando: <b>Sí</b> → <b>No puede</b> → vacío. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
+    <p class="small muted" style="margin-top:-4px">Tocá cada casillero para ir cambiando: <b>Sí</b> → <b>No puede</b> → vacío. Debajo de cada día podés poner el <b>horario de ingreso</b> al salón. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
     ${!lista.length ? '<p class="muted">Todavía no cargaste a nadie. Tocá <b>+ Agregar persona</b>.</p>' : `<table><thead><tr><th>Persona</th>${cols.map(encab).join('')}</tr></thead><tbody>
       ${porSeccion([...fijos, ...refuerzo], (a, b) => esRefuerzo(a) - esRefuerzo(b) || ordenPersonal(a, b)).map(g => `<tr class="sep-row"><td colspan="${cols.length + 1}">${esc(g.n)}</td></tr>${g.pp.map(fila).join('')}`).join('')}
       </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; const det = [[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).concat(porSeccion(pp).filter(g => g.c !== 'salon').map(g => `${g.pp.length} ${g.c === 'dj' ? g.n : g.n.toLowerCase()}`)); return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${det.join(' · ')}</div>` : ''}${ids.length ? `<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:4px"><button class="btn-sm btn-wa" data-convocar="${f}">Convocar</button><button class="btn-sm" data-copiar="${f}">Copiar lista</button></div>` : ''}</td>`; }).join('')}</tr></tfoot></table>
@@ -2095,18 +2104,19 @@ VIEWS.personal.after = () => {
   const sh = $('#semHoy'); if (sh) sh.onclick = () => { PERS_SEM = lunesDe(todayISO()); PERS_EXTRA = new Set(); render(); };
   $('#persMes').onchange = e => { PERS_MES = e.target.value || ym(todayISO()); render(); };
   $$('[data-pers]').forEach(b => b.onclick = () => formPersonal(b.dataset.pers));
+  $$('[data-ingreso]').forEach(i => i.onchange = () => { guardarIngreso(i.dataset.ingreso, i.value); toast(i.value ? `Ingreso del ${DIAS[dow(i.dataset.ingreso)].toLowerCase()}: ${i.value} hs.` : 'Horario de ingreso borrado.'); });
   $$('[data-turno]').forEach(c => c.onclick = () => { const [f, pid] = c.dataset.turno.split('|'); const st = estadoTurno(f, pid); marcarTurno(f, pid, st === '' ? 'si' : st === 'si' ? 'no' : ''); });
   $$('[data-extra]').forEach(b => b.onclick = () => { PERS_EXTRA.add(b.dataset.extra); render(); });
   $$('[data-convocar]').forEach(b => b.onclick = () => convocarWhatsApp(b.dataset.convocar));
   $$('[data-copiar]').forEach(b => b.onclick = async () => {
     const f = b.dataset.copiar, e = eventoEnFecha(f), ids = turnosDia(f);
     const pp = personalLista().filter(p => ids.includes(p.id));
-    const txt = `${DIAS[dow(f)]} ${fmtD(f)}${e ? ' · ' + tituloEv(e) : ''}\n` + porSeccion(pp).map(g => `\n*${g.n}* (${g.pp.length})\n` + g.pp.map(p => `- ${p.nombre}${g.c === 'salon' && p.rol ? ` (${p.rol})` : ''}`).join('\n')).join('\n');
+    const txt = `${DIAS[dow(f)]} ${fmtD(f)}${e ? ' · ' + tituloEv(e) : ''}\n${ingresoDia(f) ? `Ingreso: ${ingresoDia(f)} hs.\n` : ''}` + porSeccion(pp).map(g => `\n*${g.n}* (${g.pp.length})\n` + g.pp.map(p => `- ${p.nombre}${g.c === 'salon' && p.rol ? ` (${p.rol})` : ''}`).join('\n')).join('\n');
     try { await navigator.clipboard.writeText(txt); toast('Lista copiada: pegala en WhatsApp.'); } catch (err) { modal({ title: 'Lista del día', body: F.area('t', 'Copiala desde acá', txt, 'style="min-height:200px"'), submit: '' }); }
   });
 };
 /* convocar por WhatsApp: un botón por persona con el mensaje ya escrito (nunca incluye la tarifa) */
-const msjConvocatoria = (p, f) => { const e = eventoEnFecha(f); return `¡Hola ${(p.nombre || '').split(' ')[0]}! Te confirmamos para trabajar el ${DIAS[dow(f)].toLowerCase()} ${fmtD(f).slice(0, 5)}${e ? ` (${tipoEv(e)})` : ''} en Salón Dorado. ¿Me confirmás que venís? ¡Gracias!`; };
+const msjConvocatoria = (p, f) => { const e = eventoEnFecha(f); return `¡Hola ${(p.nombre || '').split(' ')[0]}! Te confirmamos para trabajar el ${DIAS[dow(f)].toLowerCase()} ${fmtD(f).slice(0, 5)}${e ? ` (${tipoEv(e)})` : ''} en Salón Dorado${ingresoDia(f) ? `. El ingreso al salón es a las ${ingresoDia(f)} hs` : ''}. ¿Me confirmás que venís? ¡Gracias!`; };
 function convocarWhatsApp(f) {
   const pp = personalLista().filter(p => turnosDia(f).includes(p.id));
   const e = eventoEnFecha(f);
@@ -2133,7 +2143,8 @@ VIEWS.personalhoja = lunes => {
     <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
   <div class="print-doc pers-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><b style="font-size:16px">Personal</b><br>Semana del ${fmtD(lunes).slice(0, 5)} al ${fmtD(addDays(lunes, 6))}</div></div>
-    <table class="pers-tbl"><thead><tr><th></th>${cols.map(f => { const e = eventoEnFecha(f); return `<th class="center">${DIAS[dow(f)]} ${fmtD(f).slice(0, 5)}<div style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">${e ? esc(tipoEv(e)) + ' · ' + esc(nombreCli(cli(e.clienteId))) : ''}</div></th>`; }).join('')}</tr></thead>
+    <table class="pers-tbl"><thead><tr><th></th>${cols.map(f => { const e = eventoEnFecha(f); return `<th class="center">${DIAS[dow(f)]} ${fmtD(f).slice(0, 5)}<div style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">${e ? esc(tipoEv(e)) + ' · ' + esc(nombreCli(cli(e.clienteId))) : ''}</div></th>`; }).join('')}</tr>
+      <tr><th style="text-align:left;font-size:11px">Ingreso</th>${cols.map(f => `<th class="center" style="font-size:13px;text-transform:none;letter-spacing:0">${ingresoDia(f) ? esc(ingresoDia(f)) + ' hs' : '<span style="color:#999;font-weight:400">____ : ____</span>'}</th>`).join('')}</tr></thead>
     <tbody>${porSeccion([...fijos, ...refuerzo], (a, b) => esRefuerzo(a) - esRefuerzo(b) || ordenPersonal(a, b)).map(g => `<tr><td colspan="${cols.length + 1}" style="background:#dde6f5;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em">${esc(g.n)}</td></tr>${g.pp.map(fila).join('')}`).join('')}${vacia}${vacia}</tbody>
     <tfoot><tr><td>Total</td>${cols.map(f => `<td class="center">${tot(f) || ''}</td>`).join('')}</tr></tfoot></table>
     ${otros.length ? `<h2>De refuerzo</h2><div class="pers-otros">${otros.map(p => `<div>${esc(p.nombre)}${p.tel ? ` <span style="color:#888">${esc(fmtTel(p.tel))}</span>` : ''}</div>`).join('')}</div>` : ''}
@@ -2615,7 +2626,13 @@ const dimMesa = it => it.t === 'ppal' ? { w: MESA_T.ppal.w, h: ladoPpal(num(it.p
 const capMesa = it => (MESA_T[it.t] || {}).max || 0;
 const fmtFechaHora = iso => { const t = new Date(iso); return isNaN(t) ? '' : `${fmtD(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`)} ${pad(t.getHours())}:${pad(t.getMinutes())}`; };
 const planoItems = e => ((e && e.plano && e.plano.items) || []).filter(i => MESA_T[i.t]);
-const ordenMesa = (a, b) => (a.t === 'ppal' ? -1 : 0) - (b.t === 'ppal' ? -1 : 0) || (parseInt(a.n, 10) || 999) - (parseInt(b.n, 10) || 999) || String(a.n || '').localeCompare(String(b.n || ''));
+const ordenMesa = (a, b) => (a.t === 'ppal' ? -1 : 0) - (b.t === 'ppal' ? -1 : 0) || (parseInt(a.n, 10) || 999) - (parseInt(b.n, 10) || 999) || String(a.n || '').localeCompare(String(b.n || '')) || (a.y - b.y) || (a.x - b.x);
+// las mesas arrancan sin número: lo pone el cliente desde su link (o los dueños en el editor)
+const etiquetaMesa = m => m.t === 'ppal' ? 'Principal' : m.n ? 'Mesa ' + m.n : 'Mesa sin número';
+// números de mesa que se repiten (para avisar)
+const numerosRepetidos = items => { const c = {}; items.filter(i => esMesa(i) && i.t !== 'ppal' && String(i.n || '').trim()).forEach(i => { const k = String(i.n).trim().toLowerCase(); c[k] = (c[k] || 0) + 1; }); return Object.keys(c).filter(k => c[k] > 1); };
+// deja la mesa vacía (sin número ni datos), en el mismo lugar
+const mesaVacia = i => esMesa(i) ? { ...i, n: i.t === 'ppal' ? 'P' : '', nom: '', pers: null, esp: [], inv: [] } : i;
 function invitadosEv(e) {
   const f = getCuenta(e).final || {}, t = num(f.adultos) + num(f.ninos) + num(f.menores);
   return t ? { n: t, de: f.confirmado ? 'número final' : 'número final sin confirmar' } : num(e.invitados) ? { n: num(e.invitados), de: 'invitados iniciales' } : null;
@@ -2625,7 +2642,7 @@ function resumenPlano(e) {
   return { mesas: m.length, lugares: sum(m, capMesa), asig: sum(m, i => i.pers), inv: invitadosEv(e), cap: num(CONF().capacidad) || 210, espUb: sum(m, i => (i.esp || []).length), ...cuentaEdades(invitadosPlano(m)), anot: invitadosPlano(m).length, espTot: sum(((e.servicio || {}).especiales || []), x => x.cant) };
 }
 // menús especiales ubicados en el plano: [{ nombre, tipo, mesa }]
-const espDelPlano = e => planoItems(e).filter(esMesa).sort(ordenMesa).flatMap(m => (m.esp || []).map(x => ({ ...x, mesa: m.t === 'ppal' ? 'Principal' : 'Mesa ' + (m.n || '?') })));
+const espDelPlano = e => planoItems(e).filter(esMesa).sort(ordenMesa).flatMap(m => (m.esp || []).map(x => ({ ...x, mesa: etiquetaMesa(m) })));
 /* invitados por mesa: item.inv = [{ id, nombre, edad: 'adulto' | 'joven' | '', menu: '' (común) o el tipo de menú especial }].
    item.esp se sigue guardando, sacado de inv, para todo lo que ya lo usa (dibujo, hoja de servicio, portal viejo).
    Las mesas viejas que solo tienen esp se muestran como invitados con ese menú. */
@@ -2638,7 +2655,7 @@ const EDAD_K = { adulto: 'ad', joven: 'jo', nino: 'ni', bebe: 'be' };
 let INV_EDAD = 'adulto';   // la última edad elegida, para no tener que cambiarla en cada invitado
 const invDe = m => Array.isArray(m.inv) ? m.inv : (m.esp || []).map(x => ({ id: x.id, nombre: x.nombre, edad: '', menu: x.tipo || '' }));
 const conInv = (m, inv) => ({ inv, esp: inv.filter(x => x.menu).map(x => ({ id: x.id, nombre: x.nombre, tipo: x.menu })), pers: Math.max(num(m.pers), inv.length) || null });
-const nombreMesaCorto = m => m.t === 'ppal' ? 'Principal' : 'Mesa ' + (m.n || '?');
+const nombreMesaCorto = etiquetaMesa;
 const porNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' });
 // todos los invitados del plano, por orden alfabético: [{ id, nombre, edad, menu, mesa, mesaId }]
 const invitadosPlano = items => items.filter(esMesa).flatMap(m => invDe(m).map(x => ({ ...x, mesa: nombreMesaCorto(m), mesaId: m.id }))).sort(porNombre);
@@ -2696,7 +2713,7 @@ function numerarMesas(items) {
   filas.forEach(f => f.m.sort((a, b) => a.x - b.x).forEach(m => { num_[m.id] = String(++n); }));
   return items.map(i => num_[i.id] ? { ...i, n: num_[i.id] } : i.t === 'ppal' && !i.n ? { ...i, n: 'P' } : i);
 }
-const desdeModelo = m => numerarMesas(m.items.map(i => ({ id: uid(), t: i.t, x: i.x, y: i.y, r: i.r || 0, n: i.n || '', nom: i.nom || '', pers: i.pers || null, esp: clean(i.esp || []), ...(Array.isArray(i.inv) ? { inv: clean(i.inv) } : {}) })));
+const desdeModelo = m => m.items.map(i => ({ id: uid(), t: i.t, x: i.x, y: i.y, r: i.r || 0, n: i.t === 'ppal' ? 'P' : '', nom: i.nom || '', pers: i.pers || null, esp: clean(i.esp || []), ...(Array.isArray(i.inv) ? { inv: clean(i.inv) } : {}) }));
 // los modelos que vienen con la app se pueden ocultar (config/planos.ocultos); los guardados se borran de la lista
 const modelosOcultos = () => ((S.config.planos || {}).ocultos) || [];
 const modelosPlano = () => [...MODELOS_FIJOS.filter(m => !modelosOcultos().includes(m.id)), ...(((S.config.planos || {}).lista) || [])];
@@ -2756,9 +2773,9 @@ VIEWS.plano = id => {
   let lado;
   if (sel) {
     const T = MESA_T[sel.t], cap = capMesa(sel), p = num(sel.pers);
-    lado = `<div class="panel-h"><h3>${T.nom}${sel.n ? ' ' + esc(sel.n) : ''}</h3><button class="btn-sm" id="plListo">Listo</button></div>
+    lado = `<div class="panel-h"><h3>${T.nom}${sel.n && sel.t !== 'ppal' ? ' ' + esc(sel.n) : sel.t !== 'ppal' && esMesa(sel) ? ' <span class="small muted">sin número</span>' : ''}</h3><button class="btn-sm" id="plListo">Listo</button></div>
       ${esMesa(sel) ? `<div class="fgrid" style="grid-template-columns:1fr 1fr">
-        <label class="f"><span>Número o nombre</span><input id="plN" value="${esc(sel.n || '')}" placeholder="Ej.: 5"></label>
+        <label class="f"><span>Número o nombre</span><input id="plN" value="${esc(sel.n || '')}" placeholder="Sin número (lo pone el cliente)"></label>
         <label class="f"><span>Personas</span><input id="plP" inputmode="numeric" value="${p || ''}" placeholder="0"></label>
         <label class="f full"><span>Quiénes se sientan</span><input id="plQ" value="${esc(sel.nom || '')}" placeholder="Ej.: Amigos de la facu"></label></div>
         <p class="small ${cap && p > cap ? '' : 'muted'}" style="margin:6px 0 10px">${sel.t === 'ppal'
@@ -2772,13 +2789,13 @@ VIEWS.plano = id => {
   } else {
     const tabs = `<div class="tema-sel" style="margin:0 0 10px">${[['mesas', 'Mesas'], ['inv', 'Invitados A‑Z']].map(([k, n]) => `<button type="button" data-pltab="${k}" class="${PLANO_TAB === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
     lado = PLANO_TAB === 'inv' ? `${tabs}${invListaHTML(items, mid => `data-plsel="${mid}" style="cursor:pointer"`)}${invitadosPlano(items).length ? '<button class="btn-sm" id="plImpInv" style="margin-top:10px">🖨️ Imprimir solo la lista</button>' : ''}` : `${tabs}
-      ${mesas.length ? `<ul class="list-clean plano-lista">${mesas.map(m => `<li data-plsel="${m.id}" style="cursor:pointer"><div><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}<div class="small muted">${MESA_T[m.t].nom}${(m.esp || []).length ? ` · <span class="esp-dot"></span> ${m.esp.length} ${m.esp.length === 1 ? 'menú especial' : 'menús especiales'}` : ''}${(() => { const c = cortoEdades(cuentaEdades(invDe(m))); return c.length ? ' · ' + c.join(' · ') : ''; })()}</div></div>
+      ${mesas.length ? `<ul class="list-clean plano-lista">${mesas.map(m => `<li data-plsel="${m.id}" style="cursor:pointer"><div><b>${esc(etiquetaMesa(m))}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}<div class="small muted">${MESA_T[m.t].nom}${(m.esp || []).length ? ` · <span class="esp-dot"></span> ${m.esp.length} ${m.esp.length === 1 ? 'menú especial' : 'menús especiales'}` : ''}${(() => { const c = cortoEdades(cuentaEdades(invDe(m))); return c.length ? ' · ' + c.join(' · ') : ''; })()}</div></div>
         <div class="right nowrap small">${num(m.pers) ? `<b style="${num(m.pers) > capMesa(m) ? `color:${m.t === 'ppal' ? '#b8740e' : 'var(--rojo)'}` : ''}">${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`
       : '<p class="muted small">No hay mesas.</p>'}
       <p class="small muted" style="margin-bottom:0">Tocá una mesa (acá o en el plano) para anotar sus invitados, girarla o sacarla.</p>`;
   }
   return `<div class="top"><div><a href="#/evento/${id}" class="small">← Volver al evento</a><h1>Plano de mesas</h1><div class="muted">${esc(tituloEv(e))} · ${fmtDL(e.fecha)}</div></div>
-    <div class="actions"><button id="plModelo">Cargar modelo</button>${items.length ? `<button id="plGuardarM">Guardar como modelo</button><button id="plBorrar" class="btn-danger">🗑️ Borrar plano</button><button class="btn-gold" data-go="planohoja/${id}">🖨️ Imprimir / PDF</button>` : ''}</div></div>
+    <div class="actions"><button id="plModelo">Cargar modelo</button>${items.length ? `<button id="plGuardarM">Guardar como modelo</button><button id="plVaciar" title="Deja las mesas en su lugar, sin números ni datos">🧹 Vaciar plano</button><button id="plBorrar" class="btn-danger">🗑️ Borrar plano</button><button class="btn-gold" data-go="planohoja/${id}">🖨️ Imprimir / PDF</button>` : ''}</div></div>
   ${items.length ? `<div class="cards">
     <div class="card"><div class="k">Mesas</div><div class="v">${r.mesas}</div><div class="small muted">${items.filter(i => i.t === 'red').length} redondas · ${items.filter(i => i.t === 'rect').length} rectangulares${items.some(i => i.t === 'cuad') ? ` · ${items.filter(i => i.t === 'cuad').length} cuadradas` : ''}${items.some(i => i.t === 'ppal') ? ' · principal' : ''}</div></div>
     <div class="card ${rectUsadas(items) > maxRect() ? 'bad' : ''}"><div class="k">Mesas rectangulares usadas</div><div class="v">${rectUsadas(items)} de ${maxRect()}</div><div class="small muted">Cada cuadrada usa 2</div></div>
@@ -2788,11 +2805,12 @@ VIEWS.plano = id => {
     ${r.espTot || r.espUb ? `<div class="card ${r.espTot && r.espUb < r.espTot ? 'warn' : 'good'}"><div class="k"><span class="esp-dot"></span> Menús especiales ubicados</div><div class="v">${r.espUb}${r.espTot ? ` de ${r.espTot}` : ''}</div>${r.espTot && r.espUb < r.espTot ? `<div class="small muted">Faltan ${r.espTot - r.espUb}: tocá la mesa y elegí el menú del invitado</div>` : r.espTot && r.espUb > r.espTot ? `<div class="small muted">Cargados en Bebida y menús especiales: ${r.espTot}</div>` : ''}</div>` : ''}
   </div>` : ''}
   ${r.asig > r.cap || (r.inv && r.inv.n > r.cap) ? `<div class="alert warn">Ojo: el salón tiene capacidad para <b>${r.cap}</b> personas como máximo${r.asig > r.cap ? ` y hay ${r.asig} ubicadas` : ` y figuran ${r.inv.n} invitados`}.</div>` : ''}
+  ${(() => { const rep_ = numerosRepetidos(items), sin = items.filter(i => esTablon(i.t) && !String(i.n || '').trim()).length; return (rep_.length ? `<div class="alert warn">Hay números de mesa repetidos: <b>${esc(rep_.join(', '))}</b>.</div>` : '') + (sin && sin < items.filter(i => esTablon(i.t)).length ? `<div class="small muted" style="margin:0 0 8px">${plural(sin, 'mesa todavía sin número', 'mesas todavía sin número')}.</div>` : ''); })()}
   ${rectUsadas(items) > maxRect() ? `<div class="alert bad">Este plano usa <b>${rectUsadas(items)}</b> mesas rectangulares y hay <b>${maxRect()}</b> (cada cuadrada son 2). Cambiá alguna por redonda.</div>` : ''}
   ${r.inv && r.lugares && r.lugares < r.inv.n ? `<div class="alert warn">Con estas mesas entran ${r.lugares} personas y hay ${r.inv.n} invitados: hace falta agregar mesas.</div>` : ''}
   ${items.length ? (() => { const m = (e.plano || {}).cliente || 'no', act = (e.plano || {}).clienteAct;
     return `<div class="panel plano-cli"><label class="f"><span>En el link del cliente</span><select id="plCli">${[['no', 'No mostrar el plano'], ['ver', 'El cliente solo lo ve'], ['editar', 'El cliente lo puede completar']].map(([v, t]) => `<option value="${v}" ${v === m ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-      <div class="small muted" style="flex:1;min-width:220px">${!e.portal ? 'Este evento todavía no tiene link del cliente.' : m === 'editar' ? 'El cliente anota quiénes se sientan en cada mesa, cuántos y los menús especiales. No puede mover ni agregar mesas. Desde el día del evento queda solo para ver.' : m === 'ver' ? 'El cliente ve el plano pero no lo puede cambiar.' : 'El cliente no ve el plano.'}${act ? ` <br>Última vez que lo completó el cliente: <b>${fmtFechaHora(act)}</b>.` : ''}</div>
+      <div class="small muted" style="flex:1;min-width:220px">${!e.portal ? 'Este evento todavía no tiene link del cliente.' : m === 'editar' ? 'El cliente le pone el número a cada mesa y anota quiénes se sientan, cuántos y los menús especiales. No puede mover ni agregar mesas. Desde el día del evento queda solo para ver.' : m === 'ver' ? 'El cliente ve el plano pero no lo puede cambiar.' : 'El cliente no ve el plano.'}${act ? ` <br>Última vez que lo completó el cliente: <b>${fmtFechaHora(act)}</b>.` : ''}</div>
       <button class="btn-sm" id="plLink">${e.portal ? '🔗 Link del cliente' : '🔗 Crear link del cliente'}</button></div>`; })() : ''}
   <div class="plano-wrap">
     <div class="panel">
@@ -2812,8 +2830,8 @@ VIEWS.plano.after = id => {
   const cambiarSel = patch => set(items.map(i => i.id === PLANO_SEL ? { ...i, ...patch } : i));
   // agregar
   $$('[data-pladd]').forEach(b => b.onclick = () => {
-    const t = b.dataset.pladd, ns = items.map(i => parseInt(i.n, 10)).filter(n => !isNaN(n));
-    const k = items.length % 8, nuevo = { id: uid(), t, x: t === 'pista' ? 540 : 400 + k * 20, y: t === 'pista' ? 640 : 560 + k * 20, r: 0, n: t === 'ppal' ? 'P' : t === 'pista' ? '' : String((ns.length ? Math.max(...ns) : 0) + 1), nom: '', pers: null };
+    const t = b.dataset.pladd;
+    const k = items.length % 8, nuevo = { id: uid(), t, x: t === 'pista' ? 540 : 400 + k * 20, y: t === 'pista' ? 640 : 560 + k * 20, r: 0, n: t === 'ppal' ? 'P' : '', nom: '', pers: null };
     set([...items, nuevo], nuevo.id);
     toast('Mesa agregada en el medio: arrastrala a su lugar.');
   });
@@ -2826,6 +2844,7 @@ VIEWS.plano.after = id => {
   if ($('#plCli')) $('#plCli').onchange = ev_ => { const E = clean(ev(id)); E.plano = { ...(E.plano || {}), cliente: ev_.target.value }; DB.save('eventos', E);
     toast(ev_.target.value === 'editar' ? 'Listo: el cliente ya puede completar el plano desde su link.' : ev_.target.value === 'ver' ? 'El cliente ve el plano, sin poder cambiarlo.' : 'El plano ya no se muestra en el link del cliente.'); };
   if ($('#plLink')) $('#plLink').onclick = () => modalPortal(id);
+  if ($('#plVaciar')) $('#plVaciar').onclick = () => confirmar('¿Vaciar el plano? Las mesas quedan en su lugar, pero sin números, sin nombres, sin personas y sin invitados ni menús especiales. (Si te equivocás, tocá Deshacer)', () => { set(items.map(mesaVacia), null); toast('Plano vaciado: quedaron solo las mesas. Si fue sin querer, tocá Deshacer.'); });
   if ($('#plBorrar')) $('#plBorrar').onclick = () => confirmar('¿Borrar el plano de este evento? Se sacan todas las mesas con sus nombres y menús especiales. (Si te equivocás, tocá Deshacer)', () => { set([], null); toast('Plano borrado. Si fue sin querer, tocá Deshacer.'); });
   $$('[data-plsel]').forEach(li => li.onclick = () => { PLANO_SEL = li.dataset.plsel; PLANO_VER = true; render(); });
   $$('[data-pltab]').forEach(b => b.onclick = () => { PLANO_TAB = b.dataset.pltab; render(); });
@@ -2843,13 +2862,13 @@ VIEWS.plano.after = id => {
 
     $$('[data-girar]').forEach(b => b.onclick = () => { const g = +b.dataset.girar; let r = g ? ((sel.r || 0) + g) % 360 : 0; if (r > 180) r -= 360; if (r <= -180) r += 360; cambiarSel({ r }); });
     $('#plDup').onclick = () => { const n = { ...sel, id: uid(), x: Math.min(PLANO_W - 40, sel.x + 40), y: Math.min(PLANO_H - 40, sel.y + 40), pers: null, nom: '', esp: [], inv: [] };
-      if (esMesa(sel) && sel.t !== 'ppal') { const ns = items.map(i => parseInt(i.n, 10)).filter(x => !isNaN(x)); n.n = String((ns.length ? Math.max(...ns) : 0) + 1); }
+      if (esMesa(sel) && sel.t !== 'ppal') n.n = '';
       set([...items, n], n.id); };
     $('#plDel').onclick = () => set(items.filter(i => i.id !== sel.id), null);
     if ($('#plJuntar')) $('#plJuntar').onclick = () => { cambiarSel({ t: 'cuad' }); toast('Ahora es una cuadrada (2 rectangulares juntas).'); };
     if ($('#plSeparar')) $('#plSeparar').onclick = () => {
       const a = (sel.r || 0) * Math.PI / 180, dx = Math.cos(a) * 50, dy = Math.sin(a) * 50, p = num(sel.pers);
-      const ns = items.map(i => parseInt(i.n, 10)).filter(x => !isNaN(x)), otra = { ...sel, id: uid(), t: 'rect', x: Math.round(sel.x + dx), y: Math.round(sel.y + dy), n: String((ns.length ? Math.max(...ns) : 0) + 1), nom: '', pers: Math.floor(p / 2) || null, esp: [], inv: [] };
+      const otra = { ...sel, id: uid(), t: 'rect', x: Math.round(sel.x + dx), y: Math.round(sel.y + dy), n: '', nom: '', pers: Math.floor(p / 2) || null, esp: [], inv: [] };
       set(items.map(i => i.id === sel.id ? { ...i, t: 'rect', x: Math.round(sel.x - dx), y: Math.round(sel.y - dy), pers: Math.ceil(p / 2) || null } : i).concat(otra));
       toast('Separada en 2 rectangulares: acomodalas donde quieras.');
     };
@@ -2937,7 +2956,7 @@ VIEWS.planohoja = id => {
   const partes = [
     O.lista ? `<h2>Mesas</h2>
     <table><thead><tr><th>Mesa</th><th>Quiénes</th><th class="num">Personas</th>${cols.map(k => `<th class="num">${EDAD_PL[k][1][0].toUpperCase() + EDAD_PL[k][1].slice(1)}</th>`).join('')}${r.espUb ? '<th>Menús especiales</th>' : ''}</tr></thead><tbody>
-    ${mesas.map(m => `<tr><td class="nowrap"><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b> <span style="color:#777">${m.t === 'red' ? 'redonda' : m.t === 'rect' ? 'rectangular' : m.t === 'cuad' ? 'cuadrada' : ''}</span></td><td>${esc(m.nom || '')}</td><td class="num">${num(m.pers) || ''}</td>${(() => { const c = cuentaEdades(invDe(m)); return cols.map(k => `<td class="num">${c[EDAD_K[k]] || ''}</td>`).join(''); })()}${r.espUb ? `<td>${(m.esp || []).map(x => `${esc(x.nombre)} <span style="color:#777">(${esc(x.tipo || '')})</span>`).join('<br>')}</td>` : ''}</tr>`).join('')}
+    ${mesas.map(m => `<tr><td class="nowrap"><b>${esc(etiquetaMesa(m))}</b> <span style="color:#777">${m.t === 'red' ? 'redonda' : m.t === 'rect' ? 'rectangular' : m.t === 'cuad' ? 'cuadrada' : ''}</span></td><td>${esc(m.nom || '')}</td><td class="num">${num(m.pers) || ''}</td>${(() => { const c = cuentaEdades(invDe(m)); return cols.map(k => `<td class="num">${c[EDAD_K[k]] || ''}</td>`).join(''); })()}${r.espUb ? `<td>${(m.esp || []).map(x => `${esc(x.nombre)} <span style="color:#777">(${esc(x.tipo || '')})</span>`).join('<br>')}</td>` : ''}</tr>`).join('')}
     </tbody><tfoot><tr><td colspan="2">Total</td><td class="num">${r.asig || ''}</td>${cols.map(k => `<td class="num">${r[EDAD_K[k]]}</td>`).join('')}${r.espUb ? `<td>${r.espUb}</td>` : ''}</tr></tfoot></table>` : '',
     O.esp && r.espUb ? `<h2>Menús especiales</h2>
     <table><thead><tr><th>Nombre y apellido</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
@@ -3001,7 +3020,7 @@ function mezclarPlanoCliente(token, d) {
   const delCli = {}; d.items.forEach(i => { if (i && i.id) delCli[i.id] = i; });
   const items = planoItems(e).map(i => { const c = delCli[i.id]; if (!c || !esMesa(i)) return i;
     const esp = (Array.isArray(c.esp) ? c.esp : []).slice(0, 40).filter(x => x && x.nombre).map(x => ({ id: txt(x.id, 20) || uid(), nombre: txt(x.nombre, 80), tipo: txt(x.tipo, 60) }));
-    const base = { ...i, nom: txt(c.nom, 80), pers: Math.max(0, Math.min(99, Math.round(num(c.pers)))) || null, esp };
+    const base = { ...i, ...(i.t !== 'ppal' && 'n' in c ? { n: txt(c.n, 20).trim() } : {}), nom: txt(c.nom, 80), pers: Math.max(0, Math.min(99, Math.round(num(c.pers)))) || null, esp };
     if (!Array.isArray(c.inv)) return base;   // portal viejo: solo menús especiales
     const inv = c.inv.slice(0, 40).filter(x => x && x.nombre).map(x => ({ id: txt(x.id, 20) || uid(), nombre: txt(x.nombre, 80), edad: EDADES[x.edad] ? x.edad : '', menu: txt(x.menu, 60) }));
     return { ...base, ...conInv(base, inv) }; });
@@ -3060,7 +3079,7 @@ async function renderPortal(token) {
     let pp = null; try { pp = await DB.getPortalPlano(token); } catch (err) { console.error(err); }
     if (pp && pp.actualizado && String(pp.actualizado) > String(P.clienteAct || '') && Array.isArray(pp.items)) {
       const m = {}; pp.items.forEach(i => { if (i && i.id) m[i.id] = i; });
-      P.items = P.items.map(i => m[i.id] ? { ...i, nom: m[i.id].nom || '', pers: num(m[i.id].pers), esp: m[i.id].esp || [], ...(Array.isArray(m[i.id].inv) ? { inv: m[i.id].inv } : {}) } : i);
+      P.items = P.items.map(i => m[i.id] ? { ...i, ...(i.t !== 'ppal' && 'n' in m[i.id] ? { n: String(m[i.id].n || '') } : {}), nom: m[i.id].nom || '', pers: num(m[i.id].pers), esp: m[i.id].esp || [], ...(Array.isArray(m[i.id].inv) ? { inv: m[i.id].inv } : {}) } : i);
     }
   }
   const hojas = [['cuenta', 'Estado de cuenta'], ...(d.timing ? [['timing', 'Timing']] : []), ...(P ? [['plano', 'Plano de mesas']] : [])];
@@ -3088,14 +3107,14 @@ function planoCliente(P, token, cont) {
     estado = 'Guardando…'; marca(); clearTimeout(t);
     t = setTimeout(async () => {
       try {
-        await DB.savePortalPlano(token, { items: P.items.filter(esMesa).map(i => ({ id: i.id, nom: i.nom || '', pers: num(i.pers), esp: i.esp || [], inv: invDe(i) })), actualizado: new Date().toISOString() });
+        await DB.savePortalPlano(token, { items: P.items.filter(esMesa).map(i => ({ id: i.id, n: i.t === 'ppal' ? '' : String(i.n || ''), nom: i.nom || '', pers: num(i.pers), esp: i.esp || [], inv: invDe(i) })), actualizado: new Date().toISOString() });
         estado = 'Guardado ✓';
       } catch (err) { console.error(err); estado = 'No se pudo guardar. Revisá la conexión y volvé a intentar.'; }
       marca();
     }, 700);
   };
   const cambiar = (patch, redibujar) => { P.items = P.items.map(i => i.id === sel ? { ...i, ...patch } : i); guardar(); if (redibujar) dibujar(); };
-  const nombreMesa = m => m.t === 'ppal' ? 'Mesa principal' : 'Mesa ' + (m.n || '?');
+  const nombreMesa = m => m.t === 'ppal' ? 'Mesa principal' : etiquetaMesa(m);
   function dibujar(bajar) {
     const ms = P.items.filter(esMesa).sort(ordenMesa), asig = sum(ms, i => i.pers), espUb = sum(ms, i => (i.esp || []).length), s = P.items.find(i => i.id === sel);
     let lado;
@@ -3103,6 +3122,7 @@ function planoCliente(P, token, cont) {
       const p = num(s.pers), cap = capMesa(s);
       lado = `<div class="panel-h"><h3>${esc(nombreMesa(s))}</h3><button class="btn-sm" id="ppListo">Listo</button></div>
         <div class="fgrid" style="grid-template-columns:1fr 1fr">
+          ${s.t !== 'ppal' ? `<label class="f full"><span>Número de mesa</span><input id="ppN" value="${esc(s.n || '')}" placeholder="Ej.: 5" maxlength="20" inputmode="numeric" autocomplete="off"></label>` : ''}
           <label class="f full"><span>Quiénes se sientan</span><input id="ppQ" value="${esc(s.nom || '')}" placeholder="Ej.: Amigos del colegio" maxlength="80"></label>
           <label class="f"><span>Cuántas personas</span><input id="ppP" inputmode="numeric" value="${p || ''}" placeholder="0" maxlength="3"></label></div>
         <p class="small ${cap && p > cap ? '' : 'muted'}" id="ppCap" style="margin:6px 0 10px"></p>
@@ -3112,8 +3132,9 @@ function planoCliente(P, token, cont) {
       lado = tab === 'inv' ? tabs + invListaHTML(P.items, editar ? mid => `data-ppsel="${mid}" style="cursor:pointer"` : null) : `${tabs}<ul class="list-clean">${ms.map(m => `<li ${editar ? `data-ppsel="${m.id}" style="cursor:pointer"` : ''}><div><b>${esc(nombreMesa(m))}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}${(m.esp || []).length ? `<div class="small muted"><span class="esp-dot"></span> ${m.esp.map(x => `${esc(x.nombre)} (${esc(x.tipo || '')})`).join(', ')}</div>` : ''}</div>
         <div class="right nowrap small">${num(m.pers) ? `<b>${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`;
     }
-    cont.innerHTML = `<div class="panel" style="margin-bottom:12px"><p style="margin:0 0 6px">${editar ? 'Tocá cada mesa para anotar a los <b>invitados</b>: nombre y apellido, si es <b>adulto, joven, niño o bebé</b> y si come un <b>menú especial</b>. Se guarda solo. En <b>Invitados A‑Z</b> ves a todos por orden alfabético. La ubicación de las mesas la define Salón Dorado.' : 'Así quedó el plano de mesas de tu evento.'}</p>
+    cont.innerHTML = `<div class="panel" style="margin-bottom:12px"><p style="margin:0 0 6px">${editar ? 'Tocá cada mesa para ponerle su <b>número</b> y anotar a los <b>invitados</b>: nombre y apellido, si es <b>adulto, joven, niño o bebé</b> y si come un <b>menú especial</b>. Se guarda solo. En <b>Invitados A‑Z</b> ves a todos por orden alfabético. La ubicación de las mesas la define Salón Dorado.' : 'Así quedó el plano de mesas de tu evento.'}</p>
         <div class="small muted">${ms.length} mesas · <b>${asig}</b> personas ubicadas${P.inv ? ` de ${P.inv.n} invitados` : ''}${espUb ? ` · <span class="esp-dot"></span> ${espUb} ${espUb === 1 ? 'menú especial' : 'menús especiales'}` : ''} <span id="ppEstado" style="margin-left:6px"></span></div>
+        ${numerosRepetidos(P.items).length ? `<div class="alert warn" style="margin:8px 0 0">Hay números de mesa repetidos: <b>${esc(numerosRepetidos(P.items).join(', '))}</b>.</div>` : ''}
         ${asig > P.cap ? `<div class="alert warn" style="margin:8px 0 0">El salón tiene capacidad para <b>${P.cap}</b> personas como máximo.</div>` : ''}</div>
       <div class="plano-wrap"><div>${planoSVG(P.items, sel, 'id="cliSvg"')}</div><div class="panel plano-side">${lado}</div></div>`;
     marca();
@@ -3127,6 +3148,7 @@ function planoCliente(P, token, cont) {
     }
     if (editar && s) {
       $('#ppListo').onclick = () => { sel = null; dibujar(); };
+      if ($('#ppN')) { $('#ppN').oninput = ev_ => { s.n = ev_.target.value.slice(0, 20).trim(); cambiar({ n: s.n }); }; $('#ppN').onchange = () => dibujar(); }
       $('#ppQ').oninput = ev_ => { s.nom = ev_.target.value.slice(0, 80); cambiar({ nom: s.nom }); };
       $('#ppQ').onchange = () => dibujar();
       $('#ppP').oninput = ev_ => { s.pers = Math.max(0, Math.min(99, Math.round(num(ev_.target.value)))); cambiar({ pers: s.pers }); capTxt(); };
