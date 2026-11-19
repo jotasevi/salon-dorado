@@ -797,6 +797,20 @@ async function descargarPDF(nombre) {
 }
 window.descargarPDF = () => descargarPDF();
 
+/* botones Atrás / Adelante (la app instalada en el celular no tiene los del navegador).
+   Cada paso del historial guarda su número en history.state; así se sabe si hay para dónde ir. */
+const NAVH = { cur: 0, max: 0 };
+function marcarHistorial() {
+  const st = history.state;
+  if (!render._navIni) { try { NAVH.max = +sessionStorage.getItem('sd.navMax') || 0; } catch (e) { } }
+  if (st && typeof st.idx === 'number') { NAVH.cur = st.idx; NAVH.max = Math.max(NAVH.max, st.idx); }
+  else { NAVH.cur = render._navIni ? NAVH.cur + 1 : 0; NAVH.max = NAVH.cur; } // paso nuevo: lo que estaba adelante se descarta
+  render._navIni = true;
+  try { history.replaceState({ idx: NAVH.cur }, '', location.href); sessionStorage.setItem('sd.navMax', NAVH.max); } catch (e) { }
+  const a = $('#navAtras'), b = $('#navAdel');
+  if (a) a.disabled = NAVH.cur <= 0;
+  if (b) b.disabled = NAVH.cur >= NAVH.max;
+}
 function render() {
   if (MODAL_OPEN) { PENDING_RENDER = true; return; }
   PENDING_RENDER = false;
@@ -807,8 +821,11 @@ function render() {
       ${NAV.map(([k, t]) => `<a href="#/${k}" data-nav="${k}">${t}</a>`).join('')}
       <a href="#" id="tema" class="tema-btn"></a>
       <div class="user">${DB.mode === 'demo' ? 'Modo demostración' : esc(DB.user.email) + ' · <a href="#" id="logout" style="display:inline;padding:0">Salir</a>'}</div></nav>
-      <main id="main"></main></div>`;
+      <main id="main"></main></div>
+      <div class="navbtns no-print"><button id="navAtras" title="Atrás" aria-label="Atrás">‹</button><button id="navAdel" title="Adelante" aria-label="Adelante">›</button></div>`;
     SHELL = true;
+    $('#navAtras').onclick = () => history.back();
+    $('#navAdel').onclick = () => history.forward();
     const lo = $('#logout'); if (lo) lo.onclick = e => { e.preventDefault(); DB.logout(); };
     $('#tema').onclick = e => { e.preventDefault(); cambiarTema(); };
     aplicarTema();
@@ -823,6 +840,7 @@ function render() {
   const rd = $('#resetDemo'); if (rd) rd.onclick = e => { e.preventDefault(); confirmar('¿Volver a los datos de ejemplo? Se pierde lo cargado en la demo.', () => DB.resetDemo()); };
   if (fn.after) fn.after(...args);
   prepararImpresion();
+  marcarHistorial();
   if (render._last === location.hash) window.scrollTo(0, y); else window.scrollTo(0, 0);
   render._last = location.hash;
 }
