@@ -242,3 +242,15 @@ main,.grid2>*,.grid3>*,.panel{min-width:0}
 .contrato-doc .ct-linea{border-top:1px solid #333;margin-bottom:6px}
 .contrato-doc .ct-acl{font-weight:400;font-size:12px;color:#555;margin-top:4px;text-align:left}
 @media print{.contrato-doc{font-size:12.5px;line-height:1.55}}
+
+/* hojas para imprimir: cómo se ven en el celular (solo en pantalla; el PDF y la impresión usan el ancho de A4) */
+@media screen and (max-width:700px){
+  #main .print-doc{padding:16px 12px;font-size:12px;overflow-x:auto}
+  #main .print-doc .ph{flex-direction:column;gap:6px}
+  #main .print-doc .ph img{width:130px}
+  #main .print-doc .ph .right{text-align:left}
+  #main .print-doc th,#main .print-doc td{padding:.35em .35em}
+  #main .print-doc .tot table{min-width:0;width:100%}
+  #main .print-opts{gap:8px 12px}
+  #main .print-opts .btn-primary,#main .print-opts .btn-gold{flex:1 1 140px;justify-content:center}
+}

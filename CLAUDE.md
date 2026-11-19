@@ -29,3 +29,11 @@ Idioma de la interfaz y de las respuestas: **español rioplatense**. El usuario 
 - Mantener todo sin dependencias ni paso de build.
 - Probar la lógica en modo demo antes de subir. No romper los datos existentes en Firestore: los campos nuevos tienen que tener un valor por defecto.
 - Commits chicos y con mensaje en español.
+
+## Personal (mozos y camareras)
+- Sección "Personal" del menú. Se guarda en la colección `config` (así no hay que cambiar las reglas de Firestore): `config/personal` → `{ lista: [{ id, nombre, rol, tel, activo }] }` y `config/turnos-AAAA-MM` → `{ dias: { 'AAAA-MM-DD': [ids] } }`.
+
+## PDF de las hojas (estado de cuenta, hoja de servicio, timing, contrato)
+- Cada hoja tiene dos botones: "Imprimir" (`imprimirHoja()`, que usa un iframe aparte porque Safari se traba) y "Descargar PDF" (`descargarPDF()`).
+- El PDF se genera sin librerías (`hojaAPdf` + `MiniPDF`): copia la `.print-doc` con 800 px de ancho fuera de pantalla, mide cada palabra, fondo, borde e imagen, y lo dibuja en un A4 con Helvetica/Times. Es todo sincrónico, para que en el celular `navigator.share` abra el menú de compartir (Archivos, WhatsApp). En la compu, descarga.
+- Estado de cuenta: por defecto NO muestra el saldo en pesos de los cubiertos ni el valor del cubierto de hoy (opción "Saldo en pesos"). Solo dice: "La semana del evento se abonan los últimos N cubiertos".

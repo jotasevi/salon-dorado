@@ -519,7 +519,7 @@ function confirmar(msg, fn) {
 /* ---------- router ---------- */
 const NAV = [
   ['inicio', 'Inicio'], ['calendario', 'Calendario'], ['eventos', 'Eventos'], ['clientes', 'Clientes'],
-  ['ipc', 'Índices IPC'], ['extras', 'Catálogo de extras'], ['egresos', 'Egresos'], ['metricas', 'Métricas'], ['config', 'Configuración'],
+  ['ipc', 'Índices IPC'], ['extras', 'Catálogo de extras'], ['egresos', 'Egresos'], ['personal', 'Personal'], ['metricas', 'Métricas'], ['config', 'Configuración'],
 ];
 const go = h => { location.hash = '#/' + h; };
 function route() { const h = decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'inicio'; const [view, ...args] = h.split('/'); return { view, args }; }
@@ -582,6 +582,220 @@ function imprimirHoja() {
   window.print();
 }
 window.imprimirHoja = imprimirHoja;   // app.js es un módulo: los onclick del HTML necesitan verla en window
+const PDF_W = {"h":[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,761,556,556,222,556,333,1000,556,556,333,1000,667,333,1000,556,611,556,556,222,222,333,333,350,556,1000,333,1000,500,333,944,556,500,667,278,333,556,556,556,556,260,556,333,737,370,556,584,333,737,333,400,584,333,333,333,556,537,278,333,333,365,556,834,834,834,611,667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278,556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500],"hb":[278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584,761,556,611,278,556,500,1000,556,556,333,1000,667,333,1000,611,611,611,611,278,278,500,500,350,556,1000,333,1000,556,333,944,611,500,667,278,333,556,556,556,556,280,556,333,737,370,556,584,333,737,333,400,584,333,333,333,611,556,278,333,333,365,556,834,834,834,611,722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278,611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556],"t":[250,333,408,500,500,833,778,180,333,333,500,564,250,333,250,278,500,500,500,500,500,500,500,500,500,500,278,278,564,564,564,444,921,722,667,667,722,611,556,722,722,333,389,722,611,889,722,722,556,722,667,556,611,722,722,944,722,722,611,333,278,333,469,500,333,444,500,444,500,444,333,500,500,278,278,500,278,778,500,500,500,500,333,389,278,500,500,722,500,500,444,480,200,480,541,761,500,444,333,500,444,1000,500,500,333,1000,556,333,889,444,611,444,444,333,333,444,444,350,500,1000,333,980,389,333,722,444,444,722,250,333,500,500,500,500,200,500,333,760,276,500,564,333,760,333,400,564,300,300,333,500,453,250,333,300,310,500,750,750,750,444,722,722,722,722,722,722,889,667,611,611,611,611,333,333,333,333,722,722,722,722,722,722,722,564,722,722,722,722,722,722,556,500,444,444,444,444,444,444,667,444,444,444,444,444,278,278,278,278,500,500,500,500,500,500,500,564,500,500,500,500,500,500,500,500],"tb":[250,333,555,500,500,1000,833,278,333,333,500,570,250,333,250,278,500,500,500,500,500,500,500,500,500,500,333,333,570,570,570,500,930,722,667,722,722,667,611,778,778,389,500,778,667,944,722,778,611,778,722,556,667,722,722,1000,722,722,667,333,278,333,581,500,333,500,556,444,556,444,333,500,556,278,333,556,278,833,556,500,556,556,444,389,333,556,500,722,500,500,444,394,220,394,520,761,500,500,333,500,500,1000,500,500,333,1000,556,333,1000,500,667,500,500,333,333,500,500,350,500,1000,333,1000,389,333,722,500,444,722,250,333,500,500,500,500,220,500,333,747,300,500,570,333,747,333,400,570,300,300,333,556,540,250,333,300,330,500,750,750,750,500,722,722,722,722,722,722,1000,722,667,667,667,667,389,389,389,389,722,722,778,778,778,778,778,570,778,722,722,722,722,722,611,556,500,500,500,500,500,500,722,444,444,444,444,444,278,278,278,278,500,556,500,500,500,500,500,570,500,556,556,556,556,500,556,500]};
+
+/* ---------- PDF propio (sin librerías): convierte la hoja que se ve en pantalla en un PDF A4 ----------
+   Se arma una copia de la hoja con ancho fijo (800 px, igual que la impresión), se mide dónde cae cada palabra,
+   fondo, borde e imagen, y se dibuja todo en el PDF. Sale igual desde el celular o la compu. */
+const PDF_FONTS = { h: 'Helvetica', hb: 'Helvetica-Bold', t: 'Times-Roman', tb: 'Times-Bold' };
+const PDF_EXTRA = { '€': 0x80, '‚': 0x82, 'ƒ': 0x83, '„': 0x84, '…': 0x85, '†': 0x86, '‡': 0x87, '‰': 0x89, 'Š': 0x8A, '‹': 0x8B, 'Œ': 0x8C, 'Ž': 0x8E, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '™': 0x99, 'š': 0x9A, '›': 0x9B, 'œ': 0x9C, 'ž': 0x9E, 'Ÿ': 0x9F, '→': 0x3E, '←': 0x3C, '✓': 0x76, '✔': 0x76 };
+function pdfBytes(s) {
+  const out = [];
+  for (const ch of String(s)) {
+    const c = ch.codePointAt(0);
+    if ((c >= 32 && c < 127) || (c >= 160 && c <= 255)) out.push(c);
+    else if (PDF_EXTRA[ch]) out.push(PDF_EXTRA[ch]);
+    else if (c === 9 || c === 10 || c === 13 || c === 0x202F || c === 0x2009) out.push(32);
+    else if (c >= 0x1F000 || (c >= 0x2600 && c <= 0x27BF) || c === 0xFE0F) continue; // emojis: no entran en la tipografía del PDF
+    else out.push(63);
+  }
+  return out;
+}
+const pdfTextW = (s, size, f) => pdfBytes(s).reduce((a, c) => a + (PDF_W[f][c - 32] || 500), 0) * size / 1000;
+const pdfStr = s => pdfBytes(s).map(c => c === 40 || c === 41 || c === 92 ? '\\' + String.fromCharCode(c) : c < 127 ? String.fromCharCode(c) : '\\' + c.toString(8).padStart(3, '0')).join('');
+const n2 = v => (Math.round(v * 100) / 100).toString();
+
+class MiniPDF {
+  constructor() { this.W = 595.28; this.H = 841.89; this.pages = []; this.imgs = []; }
+  addPage() { this.cur = []; this.pages.push(this.cur); }
+  op(s) { this.cur.push(s); }
+  rgb(c, stroke) { this.op(`${n2(c[0] / 255)} ${n2(c[1] / 255)} ${n2(c[2] / 255)} ${stroke ? 'RG' : 'rg'}`); }
+  rect(x, y, w, h, c) { this.rgb(c); this.op(`${n2(x)} ${n2(this.H - y - h)} ${n2(w)} ${n2(h)} re f`); }
+  line(x1, y1, x2, y2, c, w, dash) { this.rgb(c, true); this.op(`${n2(w)} w ${dash ? `[${dash}] 0 d` : '[] 0 d'} ${n2(x1)} ${n2(this.H - y1)} m ${n2(x2)} ${n2(this.H - y2)} l S`); }
+  text(x, yBase, s, size, f, c, targetW) {
+    const w = pdfTextW(s, size, f); if (!w) return;
+    const tz = targetW ? Math.max(70, Math.min(130, targetW / w * 100)) : 100;
+    this.rgb(c);
+    this.op(`BT /${f} ${n2(size)} Tf ${n2(tz)} Tz ${n2(x)} ${n2(this.H - yBase)} Td (${pdfStr(s)}) Tj ET`);
+  }
+  image(img, x, y, w, h) { this.op(`q ${n2(w)} 0 0 ${n2(h)} ${n2(x)} ${n2(this.H - y - h)} cm /Im${img.n} Do Q`); }
+  addImage(bytes, w, h) { const img = { n: this.imgs.length + 1, bytes, w, h }; this.imgs.push(img); return img; }
+  output() {
+    const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+    const push = b => { const u = typeof b === 'string' ? enc.encode(b) : b; parts.push(u); len += u.length; };
+    const objs = []; // cada objeto: [string antes, bytes stream?, string después]
+    const add = (head, stream, tail) => { objs.push([head, stream, tail]); return objs.length; };
+    const fontIds = {}; Object.entries(PDF_FONTS).forEach(([k, name]) => fontIds[k] = add(`<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`));
+    const imgIds = this.imgs.map(im => add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.bytes.length} >>\nstream\n`, im.bytes, '\nendstream'));
+    const res = `<< /Font << ${Object.keys(PDF_FONTS).map(k => `/${k} ${fontIds[k]} 0 R`).join(' ')} >> /XObject << ${this.imgs.map((im, i) => `/Im${im.n} ${imgIds[i]} 0 R`).join(' ')} >> >>`;
+    const pagesId = objs.length + 1 + this.pages.length * 2 + 1;
+    const pageIds = this.pages.map(ops => {
+      const body = enc.encode(ops.join('\n'));
+      const cId = add(`<< /Length ${body.length} >>\nstream\n`, body, '\nendstream');
+      return add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${this.W} ${this.H}] /Resources ${res} /Contents ${cId} 0 R >>`);
+    });
+    const pId = add(`<< /Type /Pages /Kids [${pageIds.map(i => i + ' 0 R').join(' ')}] /Count ${pageIds.length} >>`);
+    const catId = add(`<< /Type /Catalog /Pages ${pId} 0 R >>`);
+    push('%PDF-1.4\n'); push(new Uint8Array([37, 226, 227, 207, 211, 10]));
+    objs.forEach((o, i) => { offs.push(len); push(`${i + 1} 0 obj\n${o[0]}`); if (o[1]) push(o[1]); push(`${o[2] || ''}\nendobj\n`); });
+    const xref = len;
+    push(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size ${objs.length + 1} /Root ${catId} 0 R >>\nstartxref\n${xref}\n%%EOF`);
+    return new Blob(parts, { type: 'application/pdf' });
+  }
+}
+
+function pdfColor(s) {
+  const m = String(s || '').match(/rgba?\(([^)]+)\)/); if (!m) return null;
+  const p = m[1].split(/[ ,/]+/).filter(Boolean).map(parseFloat);
+  const a = p.length > 3 ? p[3] : 1; if (a < 0.05) return null;
+  return [0, 1, 2].map(i => Math.round(p[i] * a + 255 * (1 - a)));
+}
+function pdfImagen(el, cache) {
+  const src = el.currentSrc || el.src; if (cache[src] !== undefined) return cache[src];
+  try {
+    const nw = el.naturalWidth, nh = el.naturalHeight; if (!nw || !nh) return cache[src] = null;
+    const s = Math.min(1, 1400 / nw), c = document.createElement('canvas');
+    c.width = Math.round(nw * s); c.height = Math.round(nh * s);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(el, 0, 0, c.width, c.height);
+    const bin = atob(c.toDataURL('image/jpeg', 0.92).split(',')[1]), u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return cache[src] = { bytes: u, w: c.width, h: c.height };
+  } catch (err) { console.warn('imagen sin PDF', err); return cache[src] = null; }
+}
+
+// Mide la hoja y devuelve el PDF (Blob). Todo es sincrónico para que el celular permita compartir al toque.
+function hojaAPdf(fuente) {
+  const temaAntes = document.documentElement.dataset.theme;
+  document.documentElement.dataset.theme = 'light';
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:-12000px;top:0;width:800px;background:#fff';
+  const doc = fuente.cloneNode(true);
+  doc.style.cssText += ';border:none;padding:0;margin:0;max-width:none;width:800px;box-shadow:none';
+  // las imágenes de la copia ocupan lo mismo aunque todavía no estén decodificadas
+  const _o = [...fuente.querySelectorAll('img')]; [...doc.querySelectorAll('img')].forEach((im, i) => { const o = _o[i]; if (o && o.naturalWidth) im.style.aspectRatio = `${o.naturalWidth} / ${o.naturalHeight}`; });
+  box.appendChild(doc); document.body.appendChild(box);
+  try {
+    const R0 = doc.getBoundingClientRect(), X0 = R0.left, Y0 = R0.top, total = R0.height;
+    const items = [], cands = [], forced = [], avoid = [], imgCache = {};
+    const origImgs = [...fuente.querySelectorAll('img')], copyImgs = [...doc.querySelectorAll('img')];
+    [doc, ...doc.querySelectorAll('*')].forEach(el => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || el.closest('.no-print')) return;
+      const r = el.getBoundingClientRect(); if (!r.width && !r.height) return;
+      const x = r.left - X0, y = r.top - Y0, w = r.width, h = r.height;
+      const bg = el === doc ? null : pdfColor(cs.backgroundColor);
+      if (bg && !(bg[0] > 252 && bg[1] > 252 && bg[2] > 252)) items.push({ k: 'rect', x, y, w, h, c: bg });
+      [['Top', x, y, x + w, y], ['Bottom', x, y + h, x + w, y + h], ['Left', x, y, x, y + h], ['Right', x + w, y, x + w, y + h]].forEach(([s, x1, y1, x2, y2]) => {
+        const bw = parseFloat(cs[`border${s}Width`]), st = cs[`border${s}Style`], bc = pdfColor(cs[`border${s}Color`]);
+        if (bw > 0 && st !== 'none' && st !== 'hidden' && bc) {
+          const o = s === 'Top' || s === 'Left' ? bw / 2 : -bw / 2;
+          items.push({ k: 'line', x1: s === 'Left' || s === 'Right' ? x1 + o : x1, y1: s === 'Top' || s === 'Bottom' ? y1 + o : y1, x2: s === 'Left' || s === 'Right' ? x2 + o : x2, y2: s === 'Top' || s === 'Bottom' ? y2 + o : y2, c: bc, w: bw, dash: st === 'dotted' ? `${bw} ${bw * 2}` : st === 'dashed' ? `${bw * 3} ${bw * 2}` : '' });
+        }
+      });
+      if (el.tagName === 'IMG') {
+        const orig = origImgs[copyImgs.indexOf(el)] || el;
+        const im = pdfImagen(orig.complete ? orig : el, imgCache);
+        if (im) items.push({ k: 'img', x, y, w, h, im });
+      }
+      if (/^(TR|P|H1|H2|H3|H4|LI|TABLE|UL|OL|DL|DT|DD|SECTION)$/.test(el.tagName) || (el.tagName === 'DIV' && el.parentElement === doc)) cands.push(y + h);
+      if (cs.breakBefore === 'page' || cs.pageBreakBefore === 'always') forced.push(y);
+      if ((cs.breakInside === 'avoid' || cs.pageBreakInside === 'avoid' || el.tagName === 'TR') && el !== doc) avoid.push([y, y + h]);
+      if (/^H[1-4]$/.test(el.tagName) || el.tagName === 'THEAD') {   // un título o encabezado de tabla no queda solo al pie de la página
+        let sig = el.tagName === 'THEAD' ? el.parentElement.querySelector('tbody tr') : el.nextElementSibling;
+        if (sig && sig.tagName === 'TABLE') sig = sig.querySelector('tr');
+        const rs = sig && sig.getBoundingClientRect(); if (rs && rs.height) avoid.push([y, rs.bottom - Y0]);
+      }
+    });
+    // texto: cada palabra en su lugar exacto
+    const tw = document.createTreeWalker(doc, NodeFilter.SHOW_TEXT), rg = document.createRange();
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      const p = n.parentElement; if (!p || p.closest('.no-print')) continue;
+      const cs = getComputedStyle(p); if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+      const c = pdfColor(cs.color) || [34, 34, 34], size = parseFloat(cs.fontSize) || 13;
+      const bold = (parseInt(cs.fontWeight, 10) || 400) >= 600 || cs.fontWeight === 'bold';
+      const fam1 = (cs.fontFamily.split(',')[0] || '').replace(/["']/g, '').trim(), serif = /georgia|times|garamond|cormorant|playfair|^serif$/i.test(fam1);
+      const f = (serif ? 't' : 'h') + (bold ? 'b' : '');
+      const under = /underline/.test(cs.textDecorationLine || cs.textDecoration || '');
+      const upper = cs.textTransform === 'uppercase';
+      const txt = n.nodeValue, re = /\S+/g; let m;
+      while ((m = re.exec(txt))) {
+        rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+        const rects = rg.getClientRects(); if (!rects.length) continue;
+        const r = rects[0]; if (!r.width) continue;
+        items.push({ k: 'text', s: upper ? m[0].toUpperCase() : m[0], x: r.left - X0, y: r.top - Y0, w: r.width, h: r.height, size, f, c, under });
+      }
+    }
+    // páginas A4 con márgenes de 12 mm, como la impresión
+    const pdf = new MiniPDF(), M = 34, esc_ = (pdf.W - 2 * M) / 800, pageH = (pdf.H - 2 * M) / esc_;
+    const textos = items.filter(i => i.k === 'text');
+    const cortes = []; let y0 = 0;
+    while (y0 < total - 1 && cortes.length < 60) {
+      let end = Math.min(total, y0 + pageH);
+      const fz = forced.filter(f => f > y0 + 5 && f < end).sort((a, b) => a - b)[0];
+      if (fz) end = fz;
+      else if (end < total) {
+        const c = cands.filter(v => v > y0 + pageH * 0.5 && v <= end).sort((a, b) => b - a)[0];
+        if (c) end = c;
+        for (let vuelta = 0, antes = -1; vuelta < 8 && antes !== end; vuelta++) {   // repetir hasta que ningún bloque quede partido
+          antes = end;
+          avoid.forEach(([a, b]) => { if (a > y0 + 40 && a < end && b > end && b - a < pageH) end = a; });
+          textos.forEach(t => { if (t.y < end && t.y + t.h > end && t.y > y0 + 10) end = t.y; });
+        }
+      }
+      cortes.push([y0, end]); y0 = end;
+    }
+    if (!cortes.length) cortes.push([0, total]);
+    const imgObjs = new Map();
+    cortes.forEach(([a, b]) => {
+      pdf.addPage();
+      const X = v => M + v * esc_, Y = v => M + (v - a) * esc_;
+      const dentro = (t, h) => t >= a - 0.5 && t < b - 0.5 && (t + h) <= b + 2;
+      items.forEach(it => {
+        if (it.k === 'rect') {
+          const t = Math.max(a, it.y), u = Math.min(b, it.y + it.h); if (u - t < 0.5) return;
+          pdf.rect(X(it.x), Y(t), it.w * esc_, (u - t) * esc_, it.c);
+        } else if (it.k === 'line') {
+          let t = Math.max(a, Math.min(it.y1, it.y2)), u = Math.min(b, Math.max(it.y1, it.y2));
+          if (it.y1 === it.y2) { if (it.y1 < a - 0.5 || it.y1 > b + 0.5) return; t = u = it.y1; } else if (u - t < 0.5) return;
+          pdf.line(X(it.x1), Y(t), X(it.x2), Y(u), it.c, Math.max(0.3, it.w * esc_), it.dash ? it.dash.split(' ').map(v => n2(v * esc_)).join(' ') : '');
+        } else if (it.k === 'img') {
+          if (!dentro(it.y, Math.min(it.h, b - a))) return;
+          let o = imgObjs.get(it.im); if (!o) { o = pdf.addImage(it.im.bytes, it.im.w, it.im.h); imgObjs.set(it.im, o); }
+          pdf.image(o, X(it.x), Y(it.y), it.w * esc_, it.h * esc_);
+        } else if (it.k === 'text') {
+          if (!dentro(it.y, it.h)) return;
+          const size = it.size * esc_, base = Y(it.y) + (it.h * esc_ + size * 0.68) / 2;
+          pdf.text(X(it.x), base, it.s, size, it.f, it.c, it.w * esc_);
+          if (it.under) pdf.line(X(it.x), base + size * 0.15, X(it.x + it.w), base + size * 0.15, it.c, Math.max(0.4, size * 0.06));
+        }
+      });
+    });
+    return pdf.output();
+  } finally {
+    box.remove();
+    if (temaAntes) document.documentElement.dataset.theme = temaAntes; else delete document.documentElement.dataset.theme;
+  }
+}
+
+// Botón "Descargar PDF": en el celular abre el menú para compartir (guardar en Archivos, WhatsApp, Mail); en la compu descarga.
+async function descargarPDF(nombre) {
+  const src = $('#main .print-doc');
+  if (!src) { toast('No hay hoja para convertir.'); return; }
+  const { view, args } = route();
+  const e = ev(args[0]);
+  const base = nombre || `${HOJAS[view] || 'Hoja'}${e ? ' - ' + (tituloEv(e) || nombreCli(cli(e.clienteId))) + ' - ' + fmtD(e.fecha).replace(/\//g, '-') : ''}`;
+  const file = base.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim() + '.pdf';
+  let blob;
+  try { blob = hojaAPdf(src); } catch (err) { console.error(err); toast('No se pudo armar el PDF. Probá con Imprimir → Guardar como PDF.'); return; }
+  const tactil = (navigator.maxTouchPoints || 0) > 1 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  try {
+    const f = new File([blob], file, { type: 'application/pdf' });
+    if (tactil && navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: file }); return; }
+  } catch (err) { if (err && err.name === 'AbortError') return; console.warn(err); }
+  download(blob, file);
+  if (tactil) toast('PDF descargado: buscalo en Descargas / Archivos.');
+}
+window.descargarPDF = () => descargarPDF();
 
 function render() {
   if (MODAL_OPEN) { PENDING_RENDER = true; return; }
@@ -647,6 +861,9 @@ const badgeEstado = e => { const s = estadoVisual(e); return `<span class="badge
 /* ====== vistas: inicio, calendario, eventos, clientes ====== */
 
 /* ---------- INICIO ---------- */
+let TOMADOS_MES = null;
+// eventos tomados = reservas vigentes cuya fecha de contratación cae en el mes
+const eventosTomados = m => Object.values(S.eventos).filter(e => e.estado === 'reservado' && ym(e.fechaContratacion) === m).sort((a, b) => (a.fechaContratacion || '').localeCompare(b.fechaContratacion || '') || a.fecha.localeCompare(b.fecha));
 VIEWS.inicio = () => {
   const hoy = todayISO(), act = eventosActivos();
   const proximos = act.filter(e => e.estado === 'reservado' && e.fecha >= hoy && e.fecha <= addDays(hoy, 60)).sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -658,6 +875,9 @@ VIEWS.inicio = () => {
   const anioRes = act.filter(e => e.estado === 'reservado' && e.fecha.startsWith(hoy.slice(0, 4))).length;
   const sigRes = act.filter(e => e.estado === 'reservado' && e.fecha.startsWith(String(+hoy.slice(0, 4) + 1))).length;
   const quien = nombreUsuario();
+  const mesHoy = ym(hoy), mesAnt = addMonths(mesHoy, -1);
+  TOMADOS_MES = TOMADOS_MES || mesHoy;
+  const tomadosHoy = eventosTomados(mesHoy), tomadosAnt = eventosTomados(mesAnt), tomadosVer = eventosTomados(TOMADOS_MES);
   return `<div class="top"><h1>${quien ? `¡Hola ${esc(quien)}!` : '¡Hola!'}</h1>
     <div class="actions"><button class="btn-primary" id="nuevoEv">+ Nuevo evento</button></div></div>
   ${faltaIpc ? `<div class="alert warn">Falta cargar el IPC de <b>${fmtYM(ipcAnt)}</b>. Sin ese dato los ajustes de este mes quedan pendientes. <a href="#/ipc">Cargar IPC</a></div>` : ''}
@@ -666,8 +886,14 @@ VIEWS.inicio = () => {
     <div class="card"><div class="k">Reservados ${+hoy.slice(0, 4) + 1}</div><div class="v">${sigRes}</div></div>
     <div class="card ${pend.length ? 'warn' : ''}"><div class="k">Pendientes de reserva</div><div class="v">${pend.length}</div></div>
     <div class="card"><div class="k">Próximos 60 días</div><div class="v">${proximos.length}</div></div>
+    <div class="card good"><div class="k">Eventos tomados en ${MESES[+mesHoy.slice(5) - 1].toLowerCase()}</div><div class="v">${tomadosHoy.length}</div><div class="small muted">${MESES[+mesAnt.slice(5) - 1]}: ${tomadosAnt.length}</div></div>
   </div>
   <div class="grid2">
+    <div class="panel"><div class="panel-h"><h2>Eventos tomados por mes</h2>
+      <div style="display:flex;gap:6px;align-items:center"><button class="btn-sm" id="tomAnt" title="Mes anterior">◀</button><b style="min-width:130px;text-align:center">${fmtYM(TOMADOS_MES)}</b><button class="btn-sm" id="tomSig" title="Mes siguiente">▶</button>${TOMADOS_MES !== mesHoy ? '<button class="btn-sm" id="tomHoy">Este mes</button>' : ''}</div></div>
+      <p class="small muted" style="margin-top:-6px">Reservas cerradas en el mes (según la fecha en que contrataron): <b>${tomadosVer.length}</b>${tomadosVer.length ? ` · ${fmtN(sum(tomadosVer, e => getCuenta(e).cubiertosIniciales || e.invitados))} cubiertos contratados` : ''}</p>
+      ${tomadosVer.length ? `<ul class="list-clean">${tomadosVer.map(e => `<li data-go="evento/${e.id}" style="cursor:pointer"><div><b>${fmtDL(e.fecha)}</b> · ${esc(tituloEv(e))}<div class="small muted">${esc(nombreCli(cli(e.clienteId)))} · contrató el ${fmtD(e.fechaContratacion)}</div></div>${badgeEstado(e)}</li>`).join('')}</ul>` : '<p class="muted">No se tomaron eventos ese mes.</p>'}
+    </div>
     <div class="panel"><div class="panel-h"><h2>Próximos eventos</h2><a href="#/calendario">Ver calendario</a></div>
       ${proximos.length ? `<ul class="list-clean">${proximos.map(e => { const r = resumenEv(e); return `<li data-go="evento/${e.id}" style="cursor:pointer"><div><b>${fmtDL(e.fecha)}</b> · ${esc(tituloEv(e))}<div class="small muted">${esc(nombreCli(cli(e.clienteId)))} · faltan ${daysBetween(hoy, e.fecha)} días</div></div><div class="right small">${r.k.pendientes > 0 ? `${fmtN(r.k.pendientes)} cub. pend.` : '<span class="badge b-ok">Cubiertos al día</span>'}${r.x.saldo > 0 ? `<br>Extras: ${fmt$(r.x.saldo)}` : ''}</div></li>`; }).join('')}</ul>` : '<p class="muted">No hay eventos en los próximos 60 días.</p>'}
     </div>
@@ -687,6 +913,9 @@ VIEWS.inicio = () => {
 };
 VIEWS.inicio.after = () => {
   $('#nuevoEv').onclick = () => formEvento();
+  $('#tomAnt').onclick = () => { TOMADOS_MES = addMonths(TOMADOS_MES, -1); render(); };
+  $('#tomSig').onclick = () => { TOMADOS_MES = addMonths(TOMADOS_MES, 1); render(); };
+  const th = $('#tomHoy'); if (th) th.onclick = () => { TOMADOS_MES = ym(todayISO()); render(); };
   bindRecordatorios();
   $$('[data-saludado]').forEach(b => b.onclick = () => { const e = ev(b.dataset.saludado); DB.save('eventos', { ...e, aniversarioSaludado: true }); toast('Marcado como saludado'); });
 };
@@ -1536,7 +1765,7 @@ VIEWS.config.after = () => {
 /* ====== impresión, Excel, demo e inicio ====== */
 
 /* ---------- IMPRESIÓN (hoja en blanco, sin costos) ---------- */
-let PRINT_OPTS = { cub: true, ext: true, mes: false, sal: true };   // sal: saldo de cubiertos en pesos (a valor de hoy, cambia con el IPC)
+let PRINT_OPTS = { cub: true, ext: true, mes: false, sal: false };   // sal: saldo de cubiertos en pesos (a valor de hoy, cambia con el IPC)
 VIEWS.imprimir = id => {
   const e = ev(id); if (!e) return '<p>Evento no encontrado.</p>';
   const c = cli(e.clienteId), k = calcCuenta(e), x = calcExtras(e), o = PRINT_OPTS;
@@ -1546,9 +1775,9 @@ VIEWS.imprimir = id => {
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
     <label class="chk"><input type="checkbox" data-po="cub" ${o.cub ? 'checked' : ''}> Cubiertos</label>
     <label class="chk"><input type="checkbox" data-po="mes" ${o.mes ? 'checked' : ''}> Detalle mes a mes</label>
-    <label class="chk" title="Destildalo para no mostrar cuánto deben en pesos de cubiertos (se calcula a valor de hoy y cambia con el IPC)"><input type="checkbox" data-po="sal" ${o.sal ? 'checked' : ''}> Saldo en pesos</label>
+    <label class="chk" title="Tildalo solo si querés mostrar cuánto deben en pesos de cubiertos (se calcula a valor de hoy y cambia con el IPC)"><input type="checkbox" data-po="sal" ${o.sal ? 'checked' : ''}> Saldo en pesos</label>
     <label class="chk"><input type="checkbox" data-po="ext" ${o.ext ? 'checked' : ''}> Extras</label>
-    <button class="btn-primary" onclick="imprimirHoja()">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
   <div class="print-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.2rem;font-family:Georgia,serif">Estado de cuenta</div><div>Emitido el ${fmtD(todayISO())}</div></div></div>
     <table style="margin-bottom:6px"><tbody>
@@ -1561,7 +1790,7 @@ VIEWS.imprimir = id => {
       <tr><td>Cubiertos ${k.c.final.confirmado ? 'finales' : 'contratados'}</td><td class="num">${fmtN(k.facturar)}${k.c.final.confirmado ? ` <span style="color:#777">(${num(k.c.final.adultos)} adultos + ${num(k.c.final.ninos)} niños de 4 a 10 años a ½)</span>` : ''}</td></tr>
       <tr><td>Cubiertos abonados (valor congelado)</td><td class="num">${fmtN(k.pagados)}</td></tr>
       <tr><td>Cubiertos pendientes</td><td class="num">${fmtN(Math.max(0, k.pendientes))}</td></tr>
-      <tr><td>Valor del cubierto al ${fmtD(todayISO())}</td><td class="num">${fmt$(k.valorHoy)}</td></tr>
+      ${o.sal ? `<tr><td>Valor del cubierto al ${fmtD(todayISO())}</td><td class="num">${fmt$(k.valorHoy)}</td></tr>` : ''}
     </tbody></table>
     ${k.pagos.filter(p => p.tipo !== 'iva').length ? `<h3 style="margin-top:12px">Pagos recibidos</h3><table><thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Importe</th><th class="num">Valor cubierto</th><th class="num">Cubiertos</th></tr></thead><tbody>
       ${k.pagos.filter(p => p.tipo !== 'iva').map(p => `<tr><td>${fmtD(p.fecha)}</td><td>${p.sena ? 'Seña' : 'Pago'}</td><td class="num">${fmt$(p.monto)}</td><td class="num">${fmt$(p.valor)}</td><td class="num">${fmtN(p.cubiertos)}</td></tr>`).join('')}
@@ -1574,7 +1803,7 @@ VIEWS.imprimir = id => {
       : `<tr><td><b>Cubiertos pendientes</b></td><td class="num"><b>${fmtN(Math.max(0, k.pendientes))}</b></td></tr>`}
       ${k.aFavor > 0 && k.pendientes <= 0 ? `<tr><td>A favor del cliente</td><td class="num">${fmt$(k.aFavor)}</td></tr>` : ''}
     </tbody></table></div>
-    ${k.pendientes > 0 ? `<p style="color:#666;font-size:11px">Los cubiertos pendientes se actualizan según las condiciones contratadas. Los cubiertos abonados quedan congelados.${k.reservaSemana && daysBetween(todayISO(), e.fecha) > 7 && k.antesSemana > 0 ? ` Se abonan ${fmtN(k.antesSemana)} cubiertos antes de la semana del evento y ${fmtN(Math.min(k.pendientes, k.reservaSemana))} durante esa semana.` : ''}</p>` : ''}` : ''}
+    ${k.pendientes > 0 ? `<p style="color:#666;font-size:11px">Los cubiertos pendientes se actualizan según las condiciones contratadas. Los cubiertos abonados quedan congelados.${k.reservaSemana ? ` La semana del evento se abonan los últimos ${fmtN(Math.min(k.pendientes, k.reservaSemana))} cubiertos.` : ''}</p>` : ''}` : ''}
 
     ${o.ext && x.lines.length ? `<h2>Adicionales</h2><table><thead><tr><th>Concepto</th><th class="num">Cant.</th><th class="num">Importe</th><th class="num">Abonado</th><th class="num">Saldo</th></tr></thead><tbody>
       ${x.lines.map(l => `<tr><td>${esc(l.nombre)}</td><td class="num">${l.cant}</td><td class="num">${l.regalo ? 'Obsequio' : fmt$(l.total)}</td><td class="num">${l.pagado ? fmt$(l.pagado) : '—'}</td><td class="num">${l.regalo ? '—' : fmt$(l.saldo)}</td></tr>`).join('')}
@@ -1585,6 +1814,89 @@ VIEWS.imprimir = id => {
     <div class="foot">Salón Dorado · Villa Urquiza, Ciudad Autónoma de Buenos Aires</div>
   </div>`;
 };
+
+/* ---------- PERSONAL: mozos y camareras convocados por día ----------
+   Se guarda dentro de la colección "config" (no hace falta tocar las reglas de Firestore):
+   config/personal → { lista: [{ id, nombre, rol, tel, activo }] }
+   config/turnos-AAAA-MM → { dias: { 'AAAA-MM-DD': [ids de personas] } } */
+const ROLES_PERSONAL = ['Mozo', 'Camarera', 'Otro'];
+const personalLista = () => (S.config.personal || {}).lista || [];
+const turnosDia = f => ((S.config['turnos-' + ym(f)] || {}).dias || {})[f] || [];
+const ordenPersonal = (a, b) => (ROLES_PERSONAL.indexOf(a.rol) + 9) % 9 - (ROLES_PERSONAL.indexOf(b.rol) + 9) % 9 || (a.nombre || '').localeCompare(b.nombre || '');
+const lunesDe = f => addDays(f, -((dow(f) + 6) % 7));
+const DIAS_C = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+let PERS_SEM = null, PERS_MES = null;
+function guardarPersonal(lista) { DB.save('config', { ...(S.config.personal || {}), id: 'personal', lista }); }
+function marcarTurno(f, pid, on) {
+  const id = 'turnos-' + ym(f), doc = S.config[id] || { id, dias: {} };
+  const dias = { ...(doc.dias || {}) }, set = new Set(dias[f] || []);
+  if (on) set.add(pid); else set.delete(pid);
+  if (set.size) dias[f] = [...set]; else delete dias[f];
+  DB.save('config', { ...doc, id, dias });
+}
+VIEWS.personal = () => {
+  const hoy = todayISO();
+  PERS_SEM = PERS_SEM || lunesDe(hoy); PERS_MES = PERS_MES || ym(hoy);
+  const semana = [...Array(7)].map((_, i) => addDays(PERS_SEM, i));
+  const cols = semana.filter(f => [5, 6, 0].includes(dow(f)) || eventoEnFecha(f) || esFeriado(f) || turnosDia(f).length);
+  const lista = personalLista(), activos = lista.filter(p => p.activo !== false).sort(ordenPersonal);
+  const conTurno = new Set(cols.flatMap(turnosDia));
+  const filas = [...activos, ...lista.filter(p => p.activo === false && conTurno.has(p.id))];
+  // resumen del mes
+  const [yy, mm] = PERS_MES.split('-').map(Number), diasMes = new Date(yy, mm, 0).getDate();
+  const delMes = [...Array(diasMes)].map((_, i) => `${PERS_MES}-${pad(i + 1)}`).filter(f => turnosDia(f).length);
+  const resumen = lista.map(p => ({ p, fechas: delMes.filter(f => turnosDia(f).includes(p.id)) })).filter(r => r.fechas.length || r.p.activo !== false).sort((a, b) => b.fechas.length - a.fechas.length || ordenPersonal(a.p, b.p));
+  const encab = f => { const e = eventoEnFecha(f); return `<th class="center" style="min-width:110px">${DIAS_C[dow(f)]} ${fmtD(f).slice(0, 5)}${f === hoy ? ' <span class="badge b-ok">hoy</span>' : ''}
+      <div class="small" style="font-weight:400;text-transform:none;letter-spacing:0">${e ? `<a href="#/evento/${e.id}">${esc(nombreCli(cli(e.clienteId)))}</a><br><span class="muted">${esc(tipoEv(e))}${e.estado === 'pendiente' ? ' (pend.)' : ''}</span>` : `<span class="muted">${esFeriado(f) ? esc(nombreFeriado(f)) : 'Sin evento'}</span>`}</div></th>`; };
+  return `<div class="top"><h1>Personal</h1><div class="actions"><button class="btn-primary" id="nuevaPers">+ Agregar persona</button></div></div>
+  <div class="panel tbl-wrap"><div class="panel-h"><h2>¿Quiénes vienen?</h2>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-sm" id="semAnt">◀</button><b style="min-width:190px;text-align:center">Semana del ${fmtD(semana[0]).slice(0, 5)} al ${fmtD(semana[6])}</b><button class="btn-sm" id="semSig">▶</button>${PERS_SEM !== lunesDe(hoy) ? '<button class="btn-sm" id="semHoy">Esta semana</button>' : ''}</div></div>
+    <p class="small muted" style="margin-top:-4px">Tildá a quién llamaste para cada día. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
+    ${!lista.length ? '<p class="muted">Todavía no cargaste a nadie. Tocá <b>+ Agregar persona</b>.</p>' : `<table><thead><tr><th>Persona</th>${cols.map(encab).join('')}</tr></thead><tbody>
+      ${filas.map(p => `<tr><td><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}${p.activo === false ? ' · de baja' : ''}</span></td>${cols.map(f => `<td class="center"><input type="checkbox" data-turno="${f}|${p.id}" ${turnosDia(f).includes(p.id) ? 'checked' : ''} style="width:20px;height:20px" aria-label="${esc(p.nombre)} ${fmtD(f)}"></td>`).join('')}</tr>`).join('')}
+      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${[[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras'], [ids.length - m - c, 'otro', 'otros']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).join(' · ')}</div>` : ''}${ids.length ? `<button class="btn-sm" data-copiar="${f}" style="margin-top:4px">Copiar lista</button>` : ''}</td>`; }).join('')}</tr></tfoot></table>`}
+  </div>
+  <div class="grid2">
+    <div class="panel"><div class="panel-h"><h2>Equipo</h2></div>
+      ${lista.length ? `<ul class="list-clean">${[...lista].sort((a, b) => (a.activo === false) - (b.activo === false) || ordenPersonal(a, b)).map(p => `<li><div><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}</span>${p.activo === false ? ' <span class="badge b-cancelado">de baja</span>' : ''}${p.tel ? `<div class="small muted">${esc(fmtTel(p.tel))}</div>` : ''}</div>
+        <div style="display:flex;gap:6px">${p.tel ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(p.tel)}">WhatsApp</a>` : ''}<button class="btn-sm" data-pers="${p.id}">Editar</button></div></li>`).join('')}</ul>` : '<p class="muted">Sin personal cargado.</p>'}
+    </div>
+    <div class="panel"><div class="panel-h"><h2>Días trabajados</h2><input type="month" id="persMes" value="${PERS_MES}" style="width:auto"></div>
+      ${delMes.length ? `<table><thead><tr><th>Persona</th><th class="num">Días</th><th>Fechas</th></tr></thead><tbody>${resumen.map(r => `<tr><td>${esc(r.p.nombre)} <span class="small muted">${esc(r.p.rol || '')}</span></td><td class="num"><b>${r.fechas.length}</b></td><td class="small">${r.fechas.map(f => `${DIAS_C[dow(f)]} ${fmtD(f).slice(0, 5)}`).join(', ')}</td></tr>`).join('')}</tbody></table>` : `<p class="muted">Sin convocatorias cargadas en ${fmtYM(PERS_MES).toLowerCase()}.</p>`}
+    </div>
+  </div>`;
+};
+VIEWS.personal.after = () => {
+  $('#nuevaPers').onclick = () => formPersonal();
+  $('#semAnt').onclick = () => { PERS_SEM = addDays(PERS_SEM, -7); render(); };
+  $('#semSig').onclick = () => { PERS_SEM = addDays(PERS_SEM, 7); render(); };
+  const sh = $('#semHoy'); if (sh) sh.onclick = () => { PERS_SEM = lunesDe(todayISO()); render(); };
+  $('#persMes').onchange = e => { PERS_MES = e.target.value || ym(todayISO()); render(); };
+  $$('[data-pers]').forEach(b => b.onclick = () => formPersonal(b.dataset.pers));
+  $$('[data-turno]').forEach(c => c.onchange = () => { const [f, pid] = c.dataset.turno.split('|'); marcarTurno(f, pid, c.checked); });
+  $$('[data-copiar]').forEach(b => b.onclick = async () => {
+    const f = b.dataset.copiar, e = eventoEnFecha(f), ids = turnosDia(f);
+    const pp = personalLista().filter(p => ids.includes(p.id)).sort(ordenPersonal);
+    const txt = `${DIAS[dow(f)]} ${fmtD(f)}${e ? ' · ' + tituloEv(e) : ''}\n` + pp.map(p => `- ${p.nombre} (${p.rol || ''})`).join('\n');
+    try { await navigator.clipboard.writeText(txt); toast('Lista copiada: pegala en WhatsApp.'); } catch (err) { modal({ title: 'Lista del día', body: F.area('t', 'Copiala desde acá', txt, 'style="min-height:200px"'), submit: '' }); }
+  });
+};
+function formPersonal(id) {
+  const lista = personalLista(), p = id ? lista.find(x => x.id === id) : { rol: 'Mozo', activo: true };
+  modal({
+    title: id ? 'Editar persona' : 'Agregar persona',
+    body: F.text('nombre', 'Nombre y apellido', p.nombre, 'full') + F.sel('rol', 'Rol', ROLES_PERSONAL.includes(p.rol) || !p.rol ? ROLES_PERSONAL : [...ROLES_PERSONAL, p.rol], p.rol) +
+      F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'inputmode="tel" placeholder="+54911 xxxx-xxxx"') + F.chk('activo', 'Trabaja actualmente con nosotros', p.activo !== false, 'full') +
+      F.hint('Si alguien deja de venir, destildá "Trabaja actualmente": deja de aparecer en la grilla pero se guardan sus días trabajados.'),
+    danger: id ? { label: 'Eliminar', confirm: '¿Eliminar a esta persona? Mejor dala de baja si querés conservar sus días trabajados.', fn: () => guardarPersonal(personalLista().filter(x => x.id !== id)) } : null,
+    onSubmit: d => {
+      if (!d.nombre) { toast('Falta el nombre.'); return false; }
+      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo };
+      guardarPersonal(id ? personalLista().map(x => x.id === id ? obj : x) : [...personalLista(), obj]);
+    },
+  });
+}
+
 /* ---------- TIMING del evento ---------- */
 const tieneTiming = e => !!(e.timing && (e.timing.items || []).length);
 const minDe = h => { const [a, b] = String(h || '0:0').split(':').map(Number); return (a || 0) * 60 + (b || 0); };
@@ -1668,7 +1980,7 @@ VIEWS.timing = id => {
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
     <label class="chk"><input type="checkbox" data-to="notas" ${o.notas ? 'checked' : ''}> Columna para anotar a mano</label>
     <button id="edT2">Editar horarios</button>
-    <button class="btn-primary" onclick="imprimirHoja()">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
   <div class="print-doc timing-doc">
     <div class="center"><img src="${LOGO}" alt="Salón Dorado" style="width:170px"></div>
     <div class="center" style="font-size:1.6rem;margin-top:14px">Timing</div>
@@ -1783,7 +2095,7 @@ VIEWS.contrato = id => {
     : t === 'num' ? F.text(k, l, d[k], 'inputmode="numeric"') : t === 'text' ? F.text(k, l, d[k])
     : `<label class="f"><span>${l}</span><input type="${t}" name="${k}" value="${esc(d[k] || '')}"></label>`;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
-    <button class="btn-primary" id="ctPrint">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" id="ctPrint">🖨️ Imprimir</button><button class="btn-gold" id="ctPdf">⬇ Descargar PDF</button></div>
   <div class="panel no-print"><div class="panel-h"><h3>Datos que se completan en el contrato</h3><button class="btn-sm" id="ctAuto">Volver a completar con los datos de la app</button></div>
     <p class="small muted" style="margin-top:0">Se completan solos con los datos del evento. Podés corregir cualquiera; si dejás uno vacío, sale la línea punteada para escribirlo a mano. Imprimí 2 copias: una para el cliente y otra para el salón.</p>
     <form id="ctForm" class="fgrid" onsubmit="return false">${CT_CAMPOS.map(campo).join('')}</form>
@@ -1818,6 +2130,11 @@ VIEWS.contrato.after = id => {
     if (pend) { try { guardar(); } catch (err) { console.error(err); } }
     prepararImpresion(); imprimirHoja();
   };
+  $('#ctPdf').onclick = () => {
+    clearTimeout(tPrep);
+    if (CT_DRAFT && CT_DRAFT.id === id) { try { guardar(); } catch (err) { console.error(err); } }
+    descargarPDF();
+  };
   $('#ctAuto').onclick = () => { CT_DRAFT = { id, datos: contratoAuto(ev(id)) }; render(); $('#ctMsg').textContent = 'Cambios sin guardar'; };
   $('#ctLinkSave').onclick = () => {
     const u = $('#ctLink').value.trim();
@@ -1841,7 +2158,7 @@ VIEWS.orden = id => {
   const op = (k2, t) => `<label class="chk"><input type="checkbox" data-oo="${k2}" ${o[k2] ? 'checked' : ''}> ${t}</label>`;
   return `<div class="no-print print-opts"><a href="#/evento/${id}">← Volver al evento</a>
     ${op('cliente', 'Datos del cliente')}${op('menu', 'Menú')}${op('servicio', 'Bebida y especiales')}${op('amb', 'Ambientación')}${op('timing', 'Timing')}${op('extras', 'Adicionales')}${op('obs', 'Espacio para notas')}
-    <button class="btn-primary" onclick="imprimirHoja()">Imprimir / Guardar PDF</button></div>
+    <button class="btn-primary" onclick="imprimirHoja()">🖨️ Imprimir</button><button class="btn-gold" onclick="descargarPDF()">⬇ Descargar PDF</button></div>
   <div class="print-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><div style="font-size:1.2rem;font-family:Georgia,serif">Hoja de servicio</div><div>Cocina y organización</div><div style="color:#777">Impreso el ${fmtD(todayISO())}</div></div></div>
     <table style="margin-bottom:6px"><tbody>
