@@ -1837,7 +1837,29 @@ VIEWS.imprimir = id => {
    Se guarda dentro de la colección "config" (no hace falta tocar las reglas de Firestore):
    config/personal → { lista: [{ id, nombre, rol, tel, activo, tipo, tarifa }] }   (tarifa = cuánto cobra por jornada, privado)
    config/turnos-AAAA-MM → { dias: { 'AAAA-MM-DD': [ids de personas] }, no: {…}, pagado: { idPersona: true } } */
-const ROLES_PERSONAL = ['Mozo', 'Camarera', 'Otro'];
+const ROLES_PERSONAL = ['Mozo', 'Camarera', 'Cocina', 'DJ', 'Iluminador', 'Guardarropas', 'Baños', 'Limpieza', 'Otro'];
+/* cobros por categoría (privado): config/personal → tarifas: { salon: $, cocina: $, … } por jornada.
+   Cada persona cobra la tarifa de su categoría principal (según su rol) + la de sus tareas extra (p.tareasExtra).
+   Si tiene "tarifa propia" (p.tarifa), se usa esa en lugar de la suma. */
+const CATS_PAGO = [['salon', 'Mozos y camareras'], ['cocina', 'Cocina'], ['dj', 'DJ'], ['iluminador', 'Iluminador'], ['guardarropas', 'Guardarropas'], ['banos', 'Baños'], ['limpieza', 'Limpieza']];
+const catNombre = c => (CATS_PAGO.find(x => x[0] === c) || [c, c])[1];
+const catDeRol = r => ({ Mozo: 'salon', Camarera: 'salon', Cocina: 'cocina', DJ: 'dj', Iluminador: 'iluminador', Guardarropas: 'guardarropas', 'Baños': 'banos', Limpieza: 'limpieza' })[r] || null;
+const tarifasCat = () => (S.config.personal || {}).tarifas || {};
+const tareasDe = p => [...new Set([catDeRol(p.rol), ...(p.tareasExtra || [])].filter(Boolean))];
+function porJornada(p) {
+  if (num(p.tarifa)) return { monto: num(p.tarifa), detalle: 'tarifa propia' };
+  const t = tarifasCat(), tareas = tareasDe(p);
+  return { monto: sum(tareas, c => num(t[c])), detalle: tareas.map(catNombre).join(' + '), faltan: tareas.filter(c => !num(t[c])).map(catNombre) };
+}
+// pagado por semana: config/turnos-AAAA-MM (del lunes) → pagadoSem: { lunes: { idPersona: fecha } }
+const pagadoSem = (lunes, pid) => !!((((S.config['turnos-' + ym(lunes)] || {}).pagadoSem || {})[lunes] || {})[pid]);
+function marcarPagadoSem(lunes, pid, v) {
+  const id = 'turnos-' + ym(lunes), doc = S.config[id] || { id, dias: {} };
+  const ps = { ...(doc.pagadoSem || {}) }, sem = { ...(ps[lunes] || {}) };
+  if (v) sem[pid] = todayISO(); else delete sem[pid];
+  ps[lunes] = sem;
+  DB.save('config', { ...doc, id, pagadoSem: ps });
+}
 const personalLista = () => (S.config.personal || {}).lista || [];
 const turnosDia = f => ((S.config['turnos-' + ym(f)] || {}).dias || {})[f] || [];
 const ordenPersonal = (a, b) => (ROLES_PERSONAL.indexOf(a.rol) + 9) % 9 - (ROLES_PERSONAL.indexOf(b.rol) + 9) % 9 || (a.nombre || '').localeCompare(b.nombre || '');
@@ -1917,26 +1939,48 @@ VIEWS.personal = () => {
   </div>
   ${cobrosHtml(resumen)}`;
 };
-// sección privada: cuánto cobra cada uno y cuánto hay que pagarle en el mes (no sale en la hoja impresa)
+// sección privada: cuánto cobra cada uno y cuánto hay que pagarle por semana (no sale en la hoja impresa)
 function cobrosHtml(resumen) {
-  const ver = verCobros(), filas = resumen.filter(r => r.fechas.length);
-  const head = `<div class="panel-h"><h2>🔒 Cobros del mes <span class="small muted" style="font-weight:400">· privado, no sale en la hoja impresa</span></h2><button class="btn-sm" id="verCobros">${ver ? '🙈 Ocultar montos' : '👁 Mostrar montos'}</button></div>`;
+  const ver = verCobros();
+  const head = `<div class="panel-h"><h2>🔒 Cobros <span class="small muted" style="font-weight:400">· privado, no sale en la hoja impresa</span></h2><div style="display:flex;gap:6px;flex-wrap:wrap">${ver ? '<button class="btn-sm" id="tarifasCat">Tarifas por categoría</button>' : ''}<button class="btn-sm" id="verCobros">${ver ? '🙈 Ocultar montos' : '👁 Mostrar montos'}</button></div></div>`;
   if (!ver) return `<div class="panel">${head}<p class="muted small">Los montos están ocultos. Tocá <b>Mostrar montos</b> para verlos.</p></div>`;
-  if (!filas.length) return `<div class="panel">${head}<p class="muted">Nadie trabajó en ${fmtYM(PERS_MES).toLowerCase()} todavía.</p></div>`;
-  const tot = r => r.fechas.length * num(r.p.tarifa);
-  const total = filas.reduce((a, r) => a + tot(r), 0), pend = filas.filter(r => !pagadoMes(PERS_MES, r.p.id)).reduce((a, r) => a + tot(r), 0);
-  return `<div class="panel tbl-wrap">${head}
-    <p class="small muted" style="margin-top:-4px">Se calcula con los días marcados con <b>Sí</b> en ${fmtYM(PERS_MES).toLowerCase()} × lo que cobra cada uno por jornada (se carga en <b>Editar</b> de cada persona). El mes se elige arriba, en "Días trabajados".</p>
-    <table><thead><tr><th>Persona</th><th class="num">Días</th><th class="num">Por jornada</th><th class="num">A pagar</th><th class="center">Pagado</th></tr></thead><tbody>
-    ${filas.map(r => `<tr><td>${esc(r.p.nombre)} <span class="small muted">${esc(r.p.rol || '')}</span></td><td class="num">${r.fechas.length}</td>
-      <td class="num">${num(r.p.tarifa) ? fmt$(r.p.tarifa) : `<button class="btn-sm" data-pers="${r.p.id}">Cargar</button>`}</td><td class="num"><b>${num(r.p.tarifa) ? fmt$(tot(r)) : '—'}</b></td>
-      <td class="center"><input type="checkbox" data-pagado="${r.p.id}" ${pagadoMes(PERS_MES, r.p.id) ? 'checked' : ''} aria-label="Pagado a ${esc(r.p.nombre)}"></td></tr>`).join('')}
-    </tbody><tfoot><tr><td>Total</td><td class="num">${filas.reduce((a, r) => a + r.fechas.length, 0)}</td><td></td><td class="num">${fmt$(total)}</td><td class="center small">${pend ? 'Falta ' + fmt$(pend) : 'Todo pagado ✓'}</td></tr></tfoot></table>
+  const t = tarifasCat(), sinTarifas = !CATS_PAGO.some(([c]) => num(t[c]));
+  // semana elegida arriba (todos los días de lunes a domingo)
+  const dias = [...Array(7)].map((_, i) => addDays(PERS_SEM, i));
+  const semana = personalLista().map(p => ({ p, fechas: dias.filter(f => turnosDia(f).includes(p.id)), j: porJornada(p) })).filter(r => r.fechas.length).sort((a, b) => ordenPersonal(a.p, b.p));
+  const tot = r => r.fechas.length * r.j.monto;
+  const total = sum(semana, tot), pend = sum(semana.filter(r => !pagadoSem(PERS_SEM, r.p.id)), tot), sinMonto = semana.filter(r => !r.j.monto).length;
+  const tabla = semana.length ? `<div class="tbl-wrap"><table><thead><tr><th>Persona</th><th>Tareas</th><th class="num">Días</th><th class="num">Por jornada</th><th class="num">A pagar</th><th class="center">Pagado</th></tr></thead><tbody>
+    ${semana.map(r => `<tr><td>${esc(r.p.nombre)}</td><td class="small">${esc(r.j.detalle || '—')}${r.j.faltan && r.j.faltan.length ? ` <span class="badge b-warn" title="Falta cargar la tarifa de: ${esc(r.j.faltan.join(', '))}">sin tarifa</span>` : ''}</td>
+      <td class="num">${r.fechas.length}<div class="small muted">${r.fechas.map(f => DIAS_C[dow(f)]).join(' ')}</div></td>
+      <td class="num">${r.j.monto ? fmt$(r.j.monto) : `<button class="btn-sm" data-pers="${r.p.id}">Cargar</button>`}</td><td class="num"><b>${r.j.monto ? fmt$(tot(r)) : '—'}</b></td>
+      <td class="center"><input type="checkbox" data-pagadosem="${r.p.id}" ${pagadoSem(PERS_SEM, r.p.id) ? 'checked' : ''} style="width:20px;height:20px" aria-label="Pagado a ${esc(r.p.nombre)}"></td></tr>`).join('')}
+    </tbody><tfoot><tr><td colspan="2">Total de la semana</td><td class="num">${sum(semana, r => r.fechas.length)}</td><td></td><td class="num">${fmt$(total)}</td><td class="center small">${pend ? 'Falta ' + fmt$(pend) : sinMonto ? '' : 'Todo pagado ✓'}${sinMonto ? `<div class="muted">${sinMonto} sin monto</div>` : ''}</td></tr></tfoot></table></div>`
+    : '<p class="muted">Nadie anotado con "Sí" esta semana.</p>';
+  // resumen del mes (solo totales)
+  const delMes = resumen.filter(r => r.fechas.length).map(r => ({ ...r, j: porJornada(r.p) }));
+  const totMes = sum(delMes, r => r.fechas.length * r.j.monto);
+  return `<div class="panel">${head}
+    ${sinTarifas ? '<div class="alert warn">Todavía no cargaste las tarifas. Tocá <b>Tarifas por categoría</b> y poné cuánto cobra por jornada cada categoría (mozos y camareras, cocina, DJ…).</div>' : ''}
+    <h3>Semana del ${fmtD(PERS_SEM).slice(0, 5)} al ${fmtD(addDays(PERS_SEM, 6))} <span class="small muted" style="font-weight:400">(se cambia con las flechas de arriba)</span></h3>
+    <p class="small muted" style="margin-top:-4px">Días con <b>Sí</b> × lo que cobra cada uno por jornada: la tarifa de su categoría más la de sus tareas extra (se cargan en <b>Editar</b> de cada persona).</p>
+    ${tabla}
+    <p class="small" style="margin-top:12px">Total de ${fmtYM(PERS_MES).toLowerCase()}: <b>${fmt$(totMes)}</b> · ${sum(delMes, r => r.fechas.length)} jornadas <span class="muted">(el mes se elige en "Días trabajados")</span></p>
   </div>`;
+}
+function formTarifas() {
+  const t = tarifasCat();
+  modal({
+    title: '🔒 Tarifas por categoría',
+    body: F.hint('Cuánto cobra cada categoría por jornada (evento). Si alguien hace más de una tarea, se le suman. A una persona puntual le podés poner una tarifa propia en Editar.') +
+      CATS_PAGO.map(([c, n]) => F.num('t_' + c, n + ' (ARS)', t[c] || '')).join(''),
+    onSubmit: d => { const tarifas = {}; CATS_PAGO.forEach(([c]) => { if (num(d['t_' + c])) tarifas[c] = num(d['t_' + c]); }); DB.save('config', { ...(S.config.personal || {}), id: 'personal', lista: personalLista(), tarifas }); },
+  });
 }
 VIEWS.personal.after = () => {
   $('#verCobros').onclick = () => { try { localStorage.setItem(COBROS_KEY, verCobros() ? '0' : '1'); } catch (e) { } render(); };
-  $$('[data-pagado]').forEach(c => c.onchange = () => marcarPagado(PERS_MES, c.dataset.pagado, c.checked));
+  $$('[data-pagadosem]').forEach(c => c.onchange = () => marcarPagadoSem(PERS_SEM, c.dataset.pagadosem, c.checked));
+  const tc = $('#tarifasCat'); if (tc) tc.onclick = formTarifas;
   $('#nuevaPers').onclick = () => formPersonal();
   $('#semAnt').onclick = () => { PERS_SEM = addDays(PERS_SEM, -7); PERS_EXTRA = new Set(); render(); };
   $('#semSig').onclick = () => { PERS_SEM = addDays(PERS_SEM, 7); PERS_EXTRA = new Set(); render(); };
@@ -1976,13 +2020,16 @@ function formPersonal(id) {
     title: id ? 'Editar persona' : 'Agregar persona',
     body: F.text('nombre', 'Nombre y apellido', p.nombre, 'full') + F.sel('rol', 'Rol', ROLES_PERSONAL.includes(p.rol) || !p.rol ? ROLES_PERSONAL : [...ROLES_PERSONAL, p.rol], p.rol) +
       F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'inputmode="tel" placeholder="+54911 xxxx-xxxx"') +
-      F.num('tarifa', '🔒 Cobra por jornada (ARS, privado)', p.tarifa || '', 'placeholder="Ej.: 45000"') +
+      F.sep('🔒 Cobro (privado)') +
+      `<div class="full"><div class="small muted" style="margin-bottom:4px">Tareas extra que también hace (se suman a su sueldo):</div><div style="display:flex;gap:4px 14px;flex-wrap:wrap">${CATS_PAGO.map(([c, n]) => `<label class="chk"><input type="checkbox" name="tx_${c}" ${(p.tareasExtra || []).includes(c) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></div>` +
+      F.num('tarifa', 'Tarifa propia por jornada (opcional)', p.tarifa || '', 'placeholder="Vacío = según categorías"') + '<div class="full small muted" id="pjPrev"></div>' +
       F.sel('tipo', 'En la grilla', [['fijo', 'Fijo: aparece siempre'], ['refuerzo', 'De refuerzo: se suma cuando lo convocás']], p.tipo || 'fijo', 'full') + F.chk('activo', 'Trabaja actualmente con nosotros', p.activo !== false, 'full') +
       F.hint('Si alguien deja de venir, destildá "Trabaja actualmente": deja de aparecer en la grilla pero se guardan sus días trabajados.'),
+    onOpen: form => { const u = () => { const d = readForm(form); const q = porJornada({ rol: d.rol, tarifa: num(d.tarifa), tareasExtra: CATS_PAGO.map(([c]) => c).filter(c => d['tx_' + c]) }); $('#pjPrev', form).innerHTML = verCobros() ? (q.monto ? `Cobra <b>${fmt$(q.monto)}</b> por jornada (${esc(q.detalle)}).` : 'Sin monto: cargá las tarifas por categoría o una tarifa propia.') : ''; }; form.addEventListener('input', u); form.addEventListener('change', u); u(); },
     danger: id ? { label: 'Eliminar', confirm: '¿Eliminar a esta persona? Mejor dala de baja si querés conservar sus días trabajados.', fn: () => guardarPersonal(personalLista().filter(x => x.id !== id)) } : null,
     onSubmit: d => {
       if (!d.nombre) { toast('Falta el nombre.'); return false; }
-      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo, tipo: d.tipo || 'fijo', tarifa: num(d.tarifa) };
+      const obj = { ...(p.id ? p : {}), id: p.id || uid(), nombre: d.nombre, rol: d.rol, tel: normTel(d.tel), activo: d.activo, tipo: d.tipo || 'fijo', tarifa: num(d.tarifa) || null, tareasExtra: CATS_PAGO.map(([c]) => c).filter(c => d['tx_' + c] && c !== catDeRol(d.rol)) };
       guardarPersonal(id ? personalLista().map(x => x.id === id ? obj : x) : [...personalLista(), obj]);
     },
   });
