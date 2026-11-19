@@ -300,3 +300,12 @@ tr.sep-row td{background:var(--gris);font-size:.78rem;text-transform:uppercase;l
   html[data-theme="dark"][data-estilo="grafito"] .btn-primary:hover{background:#dc976b}
   html[data-theme="dark"][data-estilo="grafito"] .side img,html[data-theme="dark"][data-estilo="grafito"] .login img{filter:invert(1) grayscale(1) brightness(1.1);mix-blend-mode:screen}
 }
+
+/* ====== portal del cliente (#/p/TOKEN) ====== */
+.portal{max-width:860px;margin:0 auto;padding:20px 16px 40px}
+.portal-h{display:flex;gap:16px;align-items:center;margin-bottom:14px}
+.portal-h img{width:120px}
+.portal-h h1{margin:0;font-size:1.5rem}
+.portal-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.portal .tema-sel button{padding:.45em 1em;font-size:.9rem}
+@media (max-width:560px){.portal-h{flex-direction:column;text-align:center;gap:8px}}

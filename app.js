@@ -198,6 +198,7 @@ const DB = {
       if (raw) { try { Object.assign(S, JSON.parse(raw)); COLS.forEach(c => S[c] = S[c] || {}); } catch (e) { } }
       else seedDemo();
       migrarConfig(); migrarDomingos();
+      this.cargado = true;
       return;
     }
     const v = '10.12.2', base = `https://www.gstatic.com/firebasejs/${v}/`;
@@ -237,6 +238,7 @@ const DB = {
     });
   },
   afterFirstLoad() {
+    this.cargado = true; setTimeout(syncPortales, 500);
     // primera vez: carga el catálogo de extras y la configuración
     if (!S.config.general) this.save('config', { ...clean(DEFAULT_CONFIG), id: 'general', migraciones: Object.keys(MIGRACIONES) });
     else migrarConfig();
@@ -267,6 +269,24 @@ const DB = {
     this.onChange(false);
   },
   persist() { try { localStorage.setItem(this.LS_KEY, JSON.stringify(S)); } catch (e) { } },
+  // portal del cliente: colección "portal" (no se escucha; la escriben los dueños y la lee cualquiera que tenga el link)
+  savePortal(data) {
+    data = clean({ ...data, actualizado: new Date().toISOString() });
+    if (this.mode === 'demo') { try { localStorage.setItem('salonDorado.portal.' + data.id, JSON.stringify(data)); } catch (e) { } return; }
+    const { fsM, db } = this.fb;
+    fsM.setDoc(fsM.doc(db, 'portal', data.id), data).catch(e => { console.error(e); if (!this._avisoPortal) { this._avisoPortal = true; toast('No se pudo actualizar el portal del cliente: falta la regla de Firebase (' + e.code + ').'); } });
+  },
+  async getPortal(id) {
+    if (this.mode === 'demo') { try { return JSON.parse(localStorage.getItem('salonDorado.portal.' + id)); } catch (e) { return null; } }
+    const { fsM, db } = this.fb;
+    const d = await fsM.getDoc(fsM.doc(db, 'portal', id));
+    return d.exists() ? d.data() : null;
+  },
+  deletePortal(id) {
+    if (this.mode === 'demo') { try { localStorage.removeItem('salonDorado.portal.' + id); } catch (e) { } return; }
+    const { fsM, db } = this.fb;
+    fsM.deleteDoc(fsM.doc(db, 'portal', id)).catch(e => console.error(e));
+  },
   resetDemo() { COLS.forEach(c => S[c] = {}); seedDemo(); this.persist(); this.onChange(false); },
 };
 
@@ -533,6 +553,7 @@ function temaGuardado() { try { const t = localStorage.getItem(TEMA_KEY); return
 function temaActual() { return temaGuardado() || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
 function aplicarTema() {
   const t = temaActual(), html = document.documentElement;
+  if (html.dataset.portal) return;   // el portal del cliente se ve siempre en claro
   html.dataset.theme = t === 'light' ? 'light' : 'dark';
   html.dataset.estilo = t;
   const mc = document.querySelector('meta[name=theme-color]'); if (mc) mc.content = { light: '#2b2a28', dark: '#1b1a18', grafito: '#141518' }[t];
@@ -793,8 +814,8 @@ function hojaAPdf(fuente) {
 }
 
 // Botón "Descargar PDF": en el celular abre el menú para compartir (guardar en Archivos, WhatsApp, Mail); en la compu descarga.
-async function descargarPDF(nombre) {
-  const src = $('#main .print-doc');
+async function descargarPDF(nombre, hoja) {
+  const src = hoja || $('#main .print-doc');
   if (!src) { toast('No hay hoja para convertir.'); return; }
   const { view, args } = route();
   const e = ev(args[0]);
@@ -827,6 +848,7 @@ function marcarHistorial() {
   if (b) b.disabled = NAVH.cur >= NAVH.max;
 }
 function render() {
+  if (PORTAL_MODE) return;
   if (MODAL_OPEN) { PENDING_RENDER = true; return; }
   PENDING_RENDER = false;
   const root = $('#root');
@@ -863,6 +885,7 @@ window.addEventListener('hashchange', render);
 document.addEventListener('focusout', () => { if (PENDING_RENDER && !MODAL_OPEN) setTimeout(() => { if (!document.activeElement || !document.activeElement.closest('#main input,#main select,#main textarea')) render(); }, 50); });
 
 function onDataChange(remote) {
+  if (DB.cargado) { clearTimeout(syncPortales.t); syncPortales.t = setTimeout(syncPortales, 1500); }
   if (remote && document.activeElement && document.activeElement.closest('#main input,#main select,#main textarea')) { PENDING_RENDER = true; return; }
   clearTimeout(onDataChange.t); onDataChange.t = setTimeout(render, remote ? 60 : 0);
 }
@@ -1077,8 +1100,8 @@ function formEvento(id, pre = {}) {
   const body = `
     ${F.sel('clienteId', 'Cliente', [['__nuevo', '+ Cliente nuevo'], ...clientes.map(c => [c.id, nombreCli(c) + (c.celular ? ' · ' + fmtTel(c.celular) : '')])], e.clienteId || (pre.clienteId || '__nuevo'), 'full id="selCli"')}
     <div class="full fgrid" id="cliNuevo" style="grid-template-columns:1fr 1fr">
-      ${F.text('c_nombre', 'Nombre', '')}${F.text('c_apellido', 'Apellido', '')}
-      ${F.text('c_celular', 'Celular', '', 'placeholder="+54911 xxxx-xxxx" inputmode="tel"')}${F.text('c_familia', 'Miembros de la familia', '', 'placeholder="Ej.: Laura (mamá), Diego (papá), Sofi"')}
+      ${F.text('c_nombre', 'Nombre', '', 'autocomplete="given-name"')}${F.text('c_apellido', 'Apellido', '', 'autocomplete="family-name"')}
+      ${F.text('c_celular', 'Celular', '', 'type="tel" autocomplete="tel" placeholder="+54911 xxxx-xxxx" inputmode="tel"')}${F.text('c_familia', 'Miembros de la familia', '', 'placeholder="Ej.: Laura (mamá), Diego (papá), Sofi"')}
       ${selReligion('c_religion', '')}
     </div>
     ${F.sep('Evento')}
@@ -1257,7 +1280,7 @@ function formCliente(id) {
   const c = id ? cli(id) : {};
   modal({
     title: id ? 'Editar cliente' : 'Nuevo cliente',
-    body: F.text('nombre', 'Nombre', c.nombre) + F.text('apellido', 'Apellido', c.apellido) + F.text('celular', 'Celular', fmtTel(c.celular), 'placeholder="+54911 xxxx-xxxx" inputmode="tel"') + F.text('email', 'Email (opcional)', c.email) + selReligion('religion', c.religion) + F.area('familia', 'Miembros de la familia', c.familia) + F.area('notas', 'Notas', c.notas),
+    body: F.text('nombre', 'Nombre', c.nombre, 'autocomplete="given-name"') + F.text('apellido', 'Apellido', c.apellido, 'autocomplete="family-name"') + F.text('celular', 'Celular', fmtTel(c.celular), 'type="tel" autocomplete="tel" placeholder="+54911 xxxx-xxxx" inputmode="tel"') + F.text('email', 'Email (opcional)', c.email, 'type="email" autocomplete="email"') + selReligion('religion', c.religion) + F.area('familia', 'Miembros de la familia', c.familia) + F.area('notas', 'Notas', c.notas),
     danger: id ? { label: 'Eliminar cliente', confirm: '¿Eliminar este cliente? Sus eventos quedan sin cliente asignado.', fn: () => { DB.remove('clientes', id); go('clientes'); } } : null,
     onSubmit: d => { if (!d.nombre && !d.apellido) { toast('Completá el nombre.'); return false; } const nid = DB.save('clientes', { ...c, ...d, celular: normTel(d.celular), creado: c.creado || todayISO() }); if (!id) go('cliente/' + nid); },
   });
@@ -1287,7 +1310,7 @@ VIEWS.evento = id => {
       <h1>${esc(tituloEv(e) || 'Evento')}</h1>
       <div>${badgeEstado(e)} <b>${fmtDL(e.fecha)}</b> ${dias >= 0 ? `<span class="muted">· faltan ${dias} días</span>` : '<span class="muted">· realizado</span>'}</div></div>
     <div class="actions">${c.celular ? `<a class="btn btn-wa" target="_blank" href="${waLink(c.celular)}">WhatsApp</a>` : ''}
-      <button id="edEv">Editar datos</button><button data-go="contrato/${id}">Contrato</button><button data-go="orden/${id}" title="Menú, bebidas, menús especiales y ambientación, sin precios">Hoja para cocina y organizadora</button><button class="btn-gold" data-go="imprimir/${id}">Imprimir estado de cuenta</button></div></div>
+      <button id="edEv">Editar datos</button><button data-go="contrato/${id}">Contrato</button><button data-go="orden/${id}" title="Menú, bebidas, menús especiales y ambientación, sin precios">Hoja para cocina y organizadora</button><button class="btn-gold" data-go="imprimir/${id}">Imprimir estado de cuenta</button><button id="portalBtn" title="Link para que el cliente vea su estado de cuenta y el timing">${e.portal ? '🔗 Portal activo' : '🔗 Portal del cliente'}</button></div></div>
 
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h3>Cliente</h3><a href="#/cliente/${e.clienteId}">Ver ficha</a></div>
@@ -1370,6 +1393,7 @@ VIEWS.evento = id => {
 
 VIEWS.evento.after = id => {
   const e = ev(id); if (!e) return;
+  $('#portalBtn').onclick = () => modalPortal(id);
   $('#edEv').onclick = () => formEvento(id);
   $('#edMenu').onclick = () => formMenu(id);
   $('#edServ').onclick = () => formServicio(id);
@@ -2087,8 +2111,8 @@ function formPersonal(id) {
   const lista = personalLista(), p = id ? lista.find(x => x.id === id) : { rol: 'Mozo', activo: true };
   modal({
     title: id ? 'Editar persona' : 'Agregar persona',
-    body: F.text('nombre', 'Nombre y apellido', p.nombre, 'full') + F.sel('rol', 'Rol', ROLES_PERSONAL.includes(p.rol) || !p.rol ? ROLES_PERSONAL : [...ROLES_PERSONAL, p.rol], p.rol) +
-      F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'inputmode="tel" placeholder="+54911 xxxx-xxxx"') +
+    body: F.text('nombre', 'Nombre y apellido', p.nombre, 'full autocomplete="name"') + F.sel('rol', 'Rol', ROLES_PERSONAL.includes(p.rol) || !p.rol ? ROLES_PERSONAL : [...ROLES_PERSONAL, p.rol], p.rol) +
+      F.text('tel', 'Celular (opcional)', fmtTel(p.tel), 'type="tel" autocomplete="tel" inputmode="tel" placeholder="+54911 xxxx-xxxx"') +
       F.sep('🔒 Cobro (privado)') +
       `<div class="full"><div class="small muted" style="margin-bottom:4px">Tareas extra que también hace (se suman a su sueldo):</div><div style="display:flex;gap:4px 14px;flex-wrap:wrap">${CATS_PAGO.map(([c, n]) => `<label class="chk"><input type="checkbox" name="tx_${c}" ${(p.tareasExtra || []).includes(c) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></div>` +
       F.num('tarifa', 'Tarifa propia por jornada (opcional)', p.tarifa || '', 'placeholder="Vacío = según categorías"') + '<div class="full small muted" id="pjPrev"></div>' +
@@ -2517,10 +2541,90 @@ function seedDemo() {
     .forEach(([d, categoria, detalle, monto]) => put('egresos', { fecha: addMonths(mH, d) + '-05', categoria, detalle, monto }));
 }
 
+/* ---------- PORTAL DEL CLIENTE ----------
+   Cada evento puede tener un link secreto (e.portal = token al azar). La app de los dueños guarda en portal/{token}
+   una copia del estado de cuenta y del timing tal cual salen impresos (sin costos) y la actualiza sola cuando cambian.
+   El cliente abre #/p/{token} sin usuario ni clave y solo ve eso. Regla de Firebase: portal → get libre, list no, write solo dueños. */
+let PORTAL_MODE = false;
+const PORTAL_ULT = {};
+const tokenPortal = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+const linkPortal = t => location.origin + location.pathname + '#/p/' + t;
+function snapshotPortal(e) {
+  const pO = { ...PRINT_OPTS }, tO = { ...TIMING_OPTS };
+  Object.assign(PRINT_OPTS, { cub: true, ext: true, mes: false, sal: false }); TIMING_OPTS.notas = false;
+  try {
+    const t = document.createElement('template'), hoja = html => { t.innerHTML = html; const d = t.content.querySelector('.print-doc'); return d ? d.outerHTML : ''; };
+    const cancelado = e.estado === 'cancelado';
+    return { id: e.portal, titulo: tituloEv(e), fecha: e.fecha, cancelado, cuenta: cancelado ? '' : hoja(VIEWS.imprimir(e.id)), timing: !cancelado && tieneTiming(e) ? hoja(VIEWS.timing(e.id)) : '' };
+  } finally { Object.assign(PRINT_OPTS, pO); Object.assign(TIMING_OPTS, tO); }
+}
+function syncPortales() {
+  if (!DB.cargado || PORTAL_MODE) return;
+  Object.values(S.eventos).filter(e => e.portal).forEach(e => {
+    const snap = snapshotPortal(e), k = JSON.stringify(snap);
+    if (PORTAL_ULT[e.portal] === k) return;
+    PORTAL_ULT[e.portal] = k; DB.savePortal(snap);
+  });
+}
+function modalPortal(id) {
+  const e = ev(id), c = cli(e.clienteId);
+  if (!e.portal) {
+    return modal({
+      title: 'Portal del cliente', submit: 'Crear link',
+      body: `<div class="full"><p style="margin-top:0">Un link para que <b>${esc(nombreCli(c))}</b> vea cuando quiera su <b>estado de cuenta</b>${tieneTiming(e) ? ' y el <b>timing</b>' : ' (y el timing, cuando lo cargues)'}, sin usuario ni clave.</p>
+        <ul class="small" style="padding-left:18px;margin:0"><li>Se actualiza solo cada vez que cargás un pago, un extra o cambiás el timing.</li><li>Muestra lo mismo que la hoja impresa: <b>nunca costos</b> ni datos de otros eventos.</li><li>El link es secreto y no se puede adivinar. Lo podés desactivar cuando quieras.</li></ul></div>`,
+      onSubmit: () => { const t = tokenPortal(); DB.save('eventos', { ...e, portal: t }); syncPortales(); setTimeout(() => modalPortal(id), 50); },
+    });
+  }
+  const link = linkPortal(e.portal);
+  const txt = `¡Hola ${c.nombre || ''}! Acá pueden ver el estado de cuenta${tieneTiming(e) ? ' y el timing' : ''} de ${e.homenajeado ? 'la fiesta de ' + e.homenajeado : 'su evento'} en Salón Dorado. Se actualiza solo cada vez que hacen un pago: ${link}`;
+  modal({
+    title: 'Portal del cliente', submit: '',
+    body: `<div class="full"><p class="small muted" style="margin-top:0">Este es el link de <b>${esc(nombreCli(c))}</b>. Se actualiza solo.</p>
+      <input readonly id="plink" value="${esc(link)}" style="font-size:.85rem">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+        ${c.celular ? `<a class="btn btn-wa" target="_blank" rel="noopener" href="${waLink(c.celular, txt)}">Mandar por WhatsApp</a>` : ''}
+        <button type="button" id="pcopy">Copiar link</button>
+        <a class="btn" target="_blank" rel="noopener" href="${esc(link)}">Ver como el cliente</a></div></div>`,
+    danger: { label: 'Desactivar link', confirm: 'El link deja de funcionar y el cliente ya no va a poder ver nada. Si después creás uno nuevo, va a ser otro link. ¿Desactivar?', fn: () => { DB.deletePortal(e.portal); delete PORTAL_ULT[e.portal]; const n = { ...ev(id) }; delete n.portal; DB.save('eventos', n); toast('Link desactivado.'); } },
+    onOpen: form => {
+      $('#pcopy', form).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado.'); } catch (err) { $('#plink', form).select(); } };
+    },
+  });
+}
+async function renderPortal(token) {
+  PORTAL_MODE = true;
+  document.title = 'Salón Dorado';
+  const html = document.documentElement; html.dataset.theme = 'light'; html.dataset.estilo = 'light'; html.dataset.portal = '1';
+  const root = $('#root');
+  root.innerHTML = '<div class="portal"><p class="muted center" style="margin-top:40px">Cargando…</p></div>';
+  let d = null;
+  try { d = await DB.getPortal(token); } catch (err) { console.error(err); }
+  if (!d || d.cancelado || !d.cuenta) {
+    root.innerHTML = `<div class="portal"><div class="center" style="margin-top:40px"><img src="${LOGO}" alt="Salón Dorado" style="width:160px"><p>Este link no está disponible.</p><p class="small muted">Consultá con Salón Dorado.</p></div></div>`;
+    return;
+  }
+  const hojas = [['cuenta', 'Estado de cuenta'], ...(d.timing ? [['timing', 'Timing']] : [])];
+  let cual = 'cuenta';
+  const pintar = () => {
+    root.innerHTML = `<div class="portal">
+      <div class="portal-h"><img src="${LOGO}" alt="Salón Dorado"><div><h1>${esc(d.titulo || 'Tu evento')}</h1><div class="muted">${esc(DIAS[dow(d.fecha)])} ${fmtD(d.fecha)}</div></div></div>
+      <div class="portal-bar">${hojas.length > 1 ? `<div class="tema-sel" style="margin:0">${hojas.map(([k, n]) => `<button type="button" data-hoja="${k}" class="${k === cual ? 'on' : ''}">${n}</button>`).join('')}</div>` : '<span></span>'}
+        <button class="btn-gold" id="ppdf">⬇ Descargar PDF</button></div>
+      <main id="main">${d[cual]}</main>
+      <p class="small muted center">Actualizado el ${(() => { const t = new Date(d.actualizado); return isNaN(t) ? '' : fmtD(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`); })()}. Ante cualquier duda, escribinos.</p></div>`;
+    $$('[data-hoja]').forEach(b => b.onclick = () => { cual = b.dataset.hoja; pintar(); });
+    $('#ppdf').onclick = () => descargarPDF(`${hojas.find(h => h[0] === cual)[1]} - ${d.titulo || 'Evento'} - ${fmtD(d.fecha).replace(/\//g, '-')}`, $('#main .print-doc'));
+  };
+  pintar();
+}
+
 /* ---------- arranque ---------- */
 (async function start() {
   try {
     await DB.init(onDataChange);
+    const r = route();
+    if (r.view === 'p' && r.args[0]) return renderPortal(r.args[0]);   // portal del cliente: sin login
     DB.watchAuth(() => render());
   } catch (err) {
     console.error(err);

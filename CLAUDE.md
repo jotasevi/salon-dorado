@@ -47,3 +47,4 @@ Idioma de la interfaz y de las respuestas: **español rioplatense**. El usuario 
 - Respaldo: `descargarRespaldo()` guarda la fecha en `config/general` → `ultimoRespaldo`; Inicio avisa si pasaron más de 30 días.
 - Personal → "Convocar": abre WhatsApp por persona con el mensaje armado (`msjConvocatoria`), sin la tarifa.
 - Métricas: además de caja y facturación, ocupación por mes (sábados / vie, dom y feriados) y ranking de extras.
+- Portal del cliente: cada evento puede tener `portal` (token al azar). La app de los dueños guarda en la colección `portal/{token}` una copia en HTML del estado de cuenta y del timing tal como se imprimen (`snapshotPortal`, sin costos) y la actualiza sola (`syncPortales`). El cliente entra a `#/p/{token}` sin login (`renderPortal`, siempre en modo claro). Regla en Firebase: `portal` → get libre, list no, write solo dueños (ver `firestore.rules`). `portal` NO está en `COLS` (no se escucha).

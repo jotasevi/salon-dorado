@@ -11,5 +11,12 @@ service cloud.firestore {
       allow read, write: if esDueno()
         && coleccion in ['clientes', 'eventos', 'ipc', 'extrasCat', 'egresos', 'config'];
     }
+    // Portal del cliente: cualquiera con el link (id secreto) puede leer ESE documento,
+    // nadie puede listar la colección, y solo los dueños pueden escribir.
+    match /portal/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if esDueno();
+    }
   }
 }
