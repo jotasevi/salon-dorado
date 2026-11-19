@@ -550,6 +550,13 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 }
 if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!temaGuardado()) aplicarTema(); });
 
+/* ---------- respaldo: se anota la fecha (config/general → ultimoRespaldo) y en Inicio avisa si pasaron más de 30 días ---------- */
+function descargarRespaldo() {
+  download(new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' }), `respaldo-salon-dorado-${todayISO()}.json`);
+  DB.save('config', { ...(S.config.general || clean(DEFAULT_CONFIG)), id: 'general', ultimoRespaldo: todayISO() });
+  toast('Respaldo descargado. Guardalo en tu Drive o en un mail.');
+}
+const diasSinRespaldo = () => { const u = (S.config.general || {}).ultimoRespaldo; return u ? daysBetween(u, todayISO()) : null; };
 /* ---------- nombre para el saludo de Inicio ---------- */
 function nombreUsuario() {
   const u = DB.user || {}, em = (u.email || '').toLowerCase();
@@ -906,6 +913,7 @@ VIEWS.inicio = () => {
   const tomadosHoy = eventosTomados(mesHoy), tomadosAnt = eventosTomados(mesAnt), tomadosVer = eventosTomados(TOMADOS_MES);
   return `<div class="top"><h1>${quien ? `¡Hola ${esc(quien)}!` : '¡Hola!'}</h1>
     <div class="actions"><button class="btn-primary" id="nuevoEv">+ Nuevo evento</button></div></div>
+  ${(() => { const d = diasSinRespaldo(); return d === null || d > 30 ? `<div class="alert warn" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>${d === null ? 'Todavía no descargaste ningún respaldo de los datos.' : `Hace <b>${d} días</b> que no descargás un respaldo de los datos.`} Conviene hacerlo una vez por mes y guardarlo en tu Drive.</span><button class="btn-sm" id="bkInicio">Descargar respaldo</button></div>` : ''; })()}
   ${faltaIpc ? `<div class="alert warn">Falta cargar el IPC de <b>${fmtYM(ipcAnt)}</b>. Sin ese dato los ajustes de este mes quedan pendientes. <a href="#/ipc">Cargar IPC</a></div>` : ''}
   <div class="cards">
     <div class="card"><div class="k">Eventos reservados ${hoy.slice(0, 4)}</div><div class="v">${anioRes}</div></div>
@@ -939,6 +947,7 @@ VIEWS.inicio = () => {
 };
 VIEWS.inicio.after = () => {
   $('#nuevoEv').onclick = () => formEvento();
+  const bki = $('#bkInicio'); if (bki) bki.onclick = descargarRespaldo;
   $('#tomAnt').onclick = () => { TOMADOS_MES = addMonths(TOMADOS_MES, -1); render(); };
   $('#tomSig').onclick = () => { TOMADOS_MES = addMonths(TOMADOS_MES, 1); render(); };
   const th = $('#tomHoy'); if (th) th.onclick = () => { TOMADOS_MES = ym(todayISO()); render(); };
@@ -1652,6 +1661,26 @@ VIEWS.metricas = (anio) => {
   });
   const T = k => sum(rows, r => r[k]);
   const egCat = {}; Object.values(S.egresos).filter(g => g.fecha.startsWith(y)).forEach(g => egCat[g.categoria] = (egCat[g.categoria] || 0) + num(g.monto));
+  // ocupación: fechas "vendibles" (sábados; viernes, domingos y feriados) y cuántas se reservaron
+  const reservadas = new Set(act.filter(e => e.estado === 'reservado').map(e => e.fecha));
+  const ocup = MESES.map((mn, i) => {
+    const m = `${y}-${pad(i + 1)}`, dias = new Date(+y, i + 1, 0).getDate(), o = { mn, sab: 0, sabOc: 0, otr: 0, otrOc: 0 };
+    for (let d = 1; d <= dias; d++) {
+      const f = `${m}-${pad(d)}`, w = dow(f), oc = reservadas.has(f);
+      if (w === 6) { o.sab++; if (oc) o.sabOc++; } else if (w === 5 || w === 0 || esFeriado(f) || oc) { o.otr++; if (oc) o.otrOc++; }
+    }
+    o.tot = o.sab + o.otr; o.oc = o.sabOc + o.otrOc; o.pct = o.tot ? Math.round(o.oc / o.tot * 100) : 0;
+    return o;
+  });
+  const OT = k => sum(ocup, o => o[k]), pctAnio = OT('tot') ? Math.round(OT('oc') / OT('tot') * 100) : 0;
+  const barra = pct => `<span style="display:inline-block;width:60px;height:8px;background:var(--gris);border-radius:4px;vertical-align:middle;margin-right:6px;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:var(--gold-2)"></span></span>`;
+  // ranking de extras del año (por fecha del evento)
+  const rk = {};
+  act.filter(e => e.estado === 'reservado' && e.fecha.startsWith(y)).forEach(e => calcExtras(e).lines.forEach(l => {
+    const n = (l.nombre || 'Sin nombre').trim(), r = rk[n.toLowerCase()] || (rk[n.toLowerCase()] = { n, ev: new Set(), cant: 0, fact: 0, costo: 0, regalos: 0 });
+    r.ev.add(e.id); r.cant += l.cant; r.fact += l.total; r.costo += l.costoTotal; if (l.regalo) r.regalos++;
+  }));
+  const ranking = Object.values(rk).sort((a, b) => b.fact - a.fact || b.ev.size - a.ev.size);
   const tiposAnio = {}; act.filter(e => e.estado === 'reservado' && e.fecha.startsWith(y)).forEach(e => { const t = tipoEv(e) || 'Sin tipo'; tiposAnio[t] = (tiposAnio[t] || 0) + 1; });
   const maxEv = Math.max(1, ...rows.map(r => r.eventos));
   return `<div class="top"><h1>Métricas ${y}</h1><div class="year-tabs">${years.map(v => `<a href="#/metricas/${v}" class="${String(v) === y ? 'on' : ''}">${v}</a>`).join('')}</div></div>
@@ -1675,6 +1704,18 @@ VIEWS.metricas = (anio) => {
   <table><thead><tr><th>Mes</th><th class="num">Eventos</th><th class="num">Cubiertos</th><th class="num">Facturado cubiertos</th><th class="num">Facturado extras</th><th class="num">Costo extras</th><th class="num">Margen extras</th><th class="num">Total facturado</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${r.mn}</td><td class="num">${r.eventos || ''}</td><td class="num">${r.invitados ? fmtN(r.invitados) : ''}</td><td class="num">${r.devCub ? fmt$(r.devCub) : ''}</td><td class="num">${r.devExt ? fmt$(r.devExt) : ''}</td><td class="num">${r.devCosto ? fmt$(r.devCosto) : ''}</td><td class="num">${r.devExt ? fmt$(r.devExt - r.devCosto) : ''}</td><td class="num">${r.devCub + r.devExt ? fmt$(r.devCub + r.devExt) : ''}</td></tr>`).join('')}
   </tbody><tfoot><tr><td>Total</td><td class="num">${T('eventos')}</td><td class="num">${fmtN(T('invitados'))}</td><td class="num">${fmt$(T('devCub'))}</td><td class="num">${fmt$(T('devExt'))}</td><td class="num">${fmt$(T('devCosto'))}</td><td class="num">${fmt$(T('devExt') - T('devCosto'))}</td><td class="num">${fmt$(T('devCub') + T('devExt'))}</td></tr></tfoot></table></div>
+
+  <div class="panel tbl-wrap"><h2>Ocupación ${y}</h2>
+  <p class="small muted" style="margin-top:-4px">De las fechas que se suelen vender (sábados; viernes, domingos y feriados), cuántas están reservadas. En el año: <b>${OT('oc')} de ${OT('tot')}</b> (${pctAnio}%) · sábados <b>${OT('sabOc')} de ${OT('sab')}</b>.</p>
+  <table><thead><tr><th>Mes</th><th class="num">Sábados</th><th class="num">Vie, dom y feriados</th><th>Ocupación</th></tr></thead><tbody>
+  ${ocup.map(o => `<tr><td>${o.mn}</td><td class="num">${o.sabOc} de ${o.sab}</td><td class="num">${o.otrOc} de ${o.otr}</td><td class="nowrap">${barra(o.pct)}${o.pct}%</td></tr>`).join('')}
+  </tbody></table></div>
+
+  <div class="panel tbl-wrap"><h2>Extras más vendidos ${y}</h2>
+  <p class="small muted" style="margin-top:-4px">Según los eventos reservados del año. Ordenado por lo facturado.</p>
+  ${ranking.length ? `<table><thead><tr><th>Extra</th><th class="num">Eventos</th><th class="num">Cantidad</th><th class="num">Facturado</th><th class="num">Costo</th><th class="num">Margen</th></tr></thead><tbody>
+  ${ranking.map(r => `<tr><td>${esc(r.n)}${r.regalos ? ` <span class="small muted">· ${r.regalos} de regalo</span>` : ''}</td><td class="num">${r.ev.size}</td><td class="num">${fmtN(r.cant)}</td><td class="num">${fmt$(r.fact)}</td><td class="num">${r.costo ? fmt$(r.costo) : ''}</td><td class="num" style="color:${r.fact - r.costo < 0 ? 'var(--rojo)' : 'inherit'}">${fmt$(r.fact - r.costo)}</td></tr>`).join('')}
+  </tbody><tfoot><tr><td>Total</td><td></td><td></td><td class="num">${fmt$(sum(ranking, r => r.fact))}</td><td class="num">${fmt$(sum(ranking, r => r.costo))}</td><td class="num">${fmt$(sum(ranking, r => r.fact - r.costo))}</td></tr></tfoot></table>` : '<p class="muted small">Sin extras en los eventos de este año.</p>'}</div>
 
   <div class="grid2">
     <div class="panel"><h3>Egresos ${y} por categoría</h3>${Object.keys(egCat).length ? `<table><tbody>${Object.entries(egCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<tr><td>${esc(c)}</td><td class="num">${fmt$(v)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Sin egresos.</p>'}</div>
@@ -1775,7 +1816,7 @@ VIEWS.config.after = () => {
   $$('[data-lista]').forEach(b => b.onclick = () => { const k = b.dataset.lista; modal({ title: LISTA_LABELS[k], body: F.area('v', 'Una opción por renglón', c.listas[k].join('\n'), 'style="min-height:220px"'), onSubmit: d => saveConf({ listas: { ...c.listas, [k]: d.v.split('\n').map(s => s.trim()).filter(Boolean) } }) }); });
   $('#xls').onclick = exportarExcel;
   $('#xlsEg').onclick = exportarMovimientos;
-  $('#bk').onclick = () => download(new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' }), `respaldo-salon-dorado-${todayISO()}.json`);
+  $('#bk').onclick = descargarRespaldo;
   $('#rest').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
@@ -1936,7 +1977,7 @@ VIEWS.personal = () => {
     <p class="small muted" style="margin-top:-4px">Tocá cada casillero para ir cambiando: <b>Sí</b> → <b>No puede</b> → vacío. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
     ${!lista.length ? '<p class="muted">Todavía no cargaste a nadie. Tocá <b>+ Agregar persona</b>.</p>' : `<table><thead><tr><th>Persona</th>${cols.map(encab).join('')}</tr></thead><tbody>
       ${porSeccion([...fijos, ...refuerzo], (a, b) => esRefuerzo(a) - esRefuerzo(b) || ordenPersonal(a, b)).map(g => `<tr class="sep-row"><td colspan="${cols.length + 1}">${esc(g.n)}</td></tr>${g.pp.map(fila).join('')}`).join('')}
-      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; const det = [[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).concat(porSeccion(pp).filter(g => g.c !== 'salon').map(g => `${g.pp.length} ${g.c === 'dj' ? g.n : g.n.toLowerCase()}`)); return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${det.join(' · ')}</div>` : ''}${ids.length ? `<button class="btn-sm" data-copiar="${f}" style="margin-top:4px">Copiar lista</button>` : ''}</td>`; }).join('')}</tr></tfoot></table>
+      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; const det = [[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).concat(porSeccion(pp).filter(g => g.c !== 'salon').map(g => `${g.pp.length} ${g.c === 'dj' ? g.n : g.n.toLowerCase()}`)); return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${det.join(' · ')}</div>` : ''}${ids.length ? `<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:4px"><button class="btn-sm btn-wa" data-convocar="${f}">Convocar</button><button class="btn-sm" data-copiar="${f}">Copiar lista</button></div>` : ''}</td>`; }).join('')}</tr></tfoot></table>
       ${otros.length ? `<div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">De refuerzo · tocá un nombre para sumarlo a esta semana:</div><div style="display:flex;gap:6px;flex-wrap:wrap">${otros.map(p => `<button class="btn-sm" data-extra="${p.id}">+ ${esc(p.nombre)}</button>`).join('')}</div></div>` : ''}`}
   </div>
   <div class="grid2">
@@ -2000,6 +2041,7 @@ VIEWS.personal.after = () => {
   $$('[data-pers]').forEach(b => b.onclick = () => formPersonal(b.dataset.pers));
   $$('[data-turno]').forEach(c => c.onclick = () => { const [f, pid] = c.dataset.turno.split('|'); const st = estadoTurno(f, pid); marcarTurno(f, pid, st === '' ? 'si' : st === 'si' ? 'no' : ''); });
   $$('[data-extra]').forEach(b => b.onclick = () => { PERS_EXTRA.add(b.dataset.extra); render(); });
+  $$('[data-convocar]').forEach(b => b.onclick = () => convocarWhatsApp(b.dataset.convocar));
   $$('[data-copiar]').forEach(b => b.onclick = async () => {
     const f = b.dataset.copiar, e = eventoEnFecha(f), ids = turnosDia(f);
     const pp = personalLista().filter(p => ids.includes(p.id));
@@ -2007,6 +2049,22 @@ VIEWS.personal.after = () => {
     try { await navigator.clipboard.writeText(txt); toast('Lista copiada: pegala en WhatsApp.'); } catch (err) { modal({ title: 'Lista del día', body: F.area('t', 'Copiala desde acá', txt, 'style="min-height:200px"'), submit: '' }); }
   });
 };
+/* convocar por WhatsApp: un botón por persona con el mensaje ya escrito (nunca incluye la tarifa) */
+const msjConvocatoria = (p, f) => { const e = eventoEnFecha(f); return `¡Hola ${(p.nombre || '').split(' ')[0]}! Te confirmamos para trabajar el ${DIAS[dow(f)].toLowerCase()} ${fmtD(f).slice(0, 5)}${e ? ` (${tipoEv(e)})` : ''} en Salón Dorado. ¿Me confirmás que venís? ¡Gracias!`; };
+function convocarWhatsApp(f) {
+  const pp = personalLista().filter(p => turnosDia(f).includes(p.id));
+  const e = eventoEnFecha(f);
+  modal({
+    title: `Convocar · ${DIAS[dow(f)]} ${fmtD(f).slice(0, 5)}`, submit: '',
+    body: `<div class="full"><p class="small muted" style="margin-top:0">Tocá <b>WhatsApp</b> en cada persona: se abre el chat con el mensaje ya escrito, solo tenés que enviarlo.${e ? ` Evento: <b>${esc(tituloEv(e))}</b>.` : ''}</p>
+      ${porSeccion(pp).map(g => `<div class="small muted" style="text-transform:uppercase;letter-spacing:.03em;font-weight:600;margin:12px 0 2px">${esc(g.n)}</div><ul class="list-clean">${g.pp.map(p => `<li><div><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}</span>${p.tel ? '' : '<div class="small muted">Sin teléfono cargado</div>'}</div>
+        ${p.tel ? `<a class="btn btn-sm btn-wa" target="_blank" rel="noopener" data-enviado href="${waLink(p.tel, msjConvocatoria(p, f))}">WhatsApp</a>` : `<button type="button" class="btn-sm" data-pers-tel="${p.id}">Cargar teléfono</button>`}</li>`).join('')}</ul>`).join('')}</div>`,
+    onOpen: form => {
+      $$('[data-enviado]', form).forEach(a => a.addEventListener('click', () => { a.textContent = '✓ Abierto'; a.classList.remove('btn-wa'); }));
+      $$('[data-pers-tel]', form).forEach(b => b.onclick = () => { $('[data-x]', form).click(); formPersonal(b.dataset.persTel); });
+    },
+  });
+}
 /* hoja de la semana para imprimir (como la planilla en papel) */
 VIEWS.personalhoja = lunes => {
   lunes = /^\d{4}-\d{2}-\d{2}$/.test(lunes || '') ? lunes : lunesDe(todayISO());

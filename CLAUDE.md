@@ -40,3 +40,10 @@ Idioma de la interfaz y de las respuestas: **español rioplatense**. El usuario 
 - Cada hoja tiene dos botones: "Imprimir" (`imprimirHoja()`, que usa un iframe aparte porque Safari se traba) y "Descargar PDF" (`descargarPDF()`).
 - El PDF se genera sin librerías (`hojaAPdf` + `MiniPDF`): copia la `.print-doc` con 800 px de ancho fuera de pantalla, mide cada palabra, fondo, borde e imagen, y lo dibuja en un A4 con Helvetica/Times. Es todo sincrónico, para que en el celular `navigator.share` abra el menú de compartir (Archivos, WhatsApp). En la compu, descarga.
 - Estado de cuenta: por defecto NO muestra el saldo en pesos de los cubiertos ni el valor del cubierto de hoy (opción "Saldo en pesos"). Solo dice: "La semana del evento se abonan los últimos N cubiertos".
+
+## Otros
+- Modos de color: claro, oscuro y grafito (`TEMAS` en `app.js`). Grafito usa `data-theme="dark"` + `data-estilo="grafito"`; sus estilos están al final de `styles.css`. Las hojas impresas y los PDF siempre salen en blanco.
+- `sw.js` (service worker): pide siempre la última versión al servidor y, sin internet, abre la última guardada. Solo toca archivos del mismo sitio (no Firebase).
+- Respaldo: `descargarRespaldo()` guarda la fecha en `config/general` → `ultimoRespaldo`; Inicio avisa si pasaron más de 30 días.
+- Personal → "Convocar": abre WhatsApp por persona con el mensaje armado (`msjConvocatoria`), sin la tarifa.
+- Métricas: además de caja y facturación, ocupación por mes (sábados / vie, dom y feriados) y ranking de extras.
