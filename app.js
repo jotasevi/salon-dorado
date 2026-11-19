@@ -224,15 +224,18 @@ const DB = {
   resetPass(email) { const { authM, auth } = this.fb; return authM.sendPasswordResetEmail(auth, email); },
   listen() {
     const { fsM, db } = this.fb;
-    const seen = new Set();
+    const seen = new Set(), primera = new Set();
     COLS.forEach(col => {
-      const un = fsM.onSnapshot(fsM.collection(db, col), snap => {
-        snap.docChanges().forEach(ch => {
+      // includeMetadataChanges: sin esto, si los datos guardados en el dispositivo ya coinciden con la nube,
+      // nunca llega el aviso "fromCache: false" y afterFirstLoad (migraciones, portal) no se ejecuta.
+      const un = fsM.onSnapshot(fsM.collection(db, col), { includeMetadataChanges: true }, snap => {
+        const cambios = snap.docChanges();
+        cambios.forEach(ch => {
           if (ch.type === 'removed') delete S[col][ch.doc.id];
           else S[col][ch.doc.id] = { ...ch.doc.data(), id: ch.doc.id };
         });
         if (!snap.metadata.fromCache && !seen.has(col)) { seen.add(col); if (seen.size === COLS.length) this.afterFirstLoad(); }
-        this.onChange(true);
+        if (cambios.length || !primera.has(col)) { primera.add(col); this.onChange(true); }
       }, err => { console.error(err); toast('Error de conexión con la base: ' + err.code); });
       this.fb.unsubs.push(un);
     });
