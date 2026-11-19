@@ -525,17 +525,17 @@ const go = h => { location.hash = '#/' + h; };
 function route() { const h = decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'inicio'; const [view, ...args] = h.split('/'); return { view, args }; }
 
 const VIEWS = {};
-/* ---------- modos de color: claro, oscuro y dorado (se recuerda en cada dispositivo) ----------
-   "dorado" usa todo lo del oscuro (data-theme="dark") y le cambia la paleta con data-estilo="dorado". */
+/* ---------- modos de color: claro, oscuro y grafito (se recuerda en cada dispositivo) ----------
+   "grafito" usa todo lo del oscuro (data-theme="dark") y le cambia la paleta con data-estilo="grafito". */
 const TEMA_KEY = 'salonDorado.tema';
-const TEMAS = [['light', '☀️', 'Claro'], ['dark', '🌙', 'Oscuro'], ['dorado', '✨', 'Dorado']];
+const TEMAS = [['light', '☀️', 'Claro'], ['dark', '🌙', 'Oscuro'], ['grafito', '◐', 'Grafito']];
 function temaGuardado() { try { const t = localStorage.getItem(TEMA_KEY); return TEMAS.some(x => x[0] === t) ? t : null; } catch (e) { return null; } }
 function temaActual() { return temaGuardado() || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
 function aplicarTema() {
   const t = temaActual(), html = document.documentElement;
   html.dataset.theme = t === 'light' ? 'light' : 'dark';
   html.dataset.estilo = t;
-  const mc = document.querySelector('meta[name=theme-color]'); if (mc) mc.content = { light: '#2b2a28', dark: '#1b1a18', dorado: '#0d0c0a' }[t];
+  const mc = document.querySelector('meta[name=theme-color]'); if (mc) mc.content = { light: '#2b2a28', dark: '#1b1a18', grafito: '#141518' }[t];
   const b = document.getElementById('tema');
   if (b) b.innerHTML = TEMAS.map(([k, ic, n]) => `<button type="button" data-tema="${k}" class="${k === t ? 'on' : ''}" title="Modo ${n.toLowerCase()}" aria-pressed="${k === t}">${ic} ${n}</button>`).join('');
 }
