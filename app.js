@@ -274,7 +274,7 @@ const DB = {
     data = clean({ ...data, actualizado: new Date().toISOString() });
     if (this.mode === 'demo') { try { localStorage.setItem('salonDorado.portal.' + data.id, JSON.stringify(data)); } catch (e) { } return; }
     const { fsM, db } = this.fb;
-    fsM.setDoc(fsM.doc(db, 'portal', data.id), data).catch(e => { console.error(e); if (!this._avisoPortal) { this._avisoPortal = true; toast('No se pudo actualizar el portal del cliente: falta la regla de Firebase (' + e.code + ').'); } });
+    fsM.setDoc(fsM.doc(db, 'portal', data.id), data).catch(e => { console.error(e); delete PORTAL_ULT[data.id]; if (!this._avisoPortal) { this._avisoPortal = true; toast('No se pudo actualizar el portal del cliente: falta la regla de Firebase (' + e.code + ').'); } });
   },
   async getPortal(id) {
     if (this.mode === 'demo') { try { return JSON.parse(localStorage.getItem('salonDorado.portal.' + id)); } catch (e) { return null; } }
