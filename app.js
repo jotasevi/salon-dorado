@@ -891,7 +891,7 @@ VIEWS.inicio = () => {
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h2>Eventos tomados por mes</h2>
       <div style="display:flex;gap:6px;align-items:center"><button class="btn-sm" id="tomAnt" title="Mes anterior">◀</button><b style="min-width:130px;text-align:center">${fmtYM(TOMADOS_MES)}</b><button class="btn-sm" id="tomSig" title="Mes siguiente">▶</button>${TOMADOS_MES !== mesHoy ? '<button class="btn-sm" id="tomHoy">Este mes</button>' : ''}</div></div>
-      <p class="small muted" style="margin-top:-6px">Reservas cerradas en el mes (según la fecha en que contrataron): <b>${tomadosVer.length}</b>${tomadosVer.length ? ` · ${fmtN(sum(tomadosVer, e => getCuenta(e).cubiertosIniciales || e.invitados))} cubiertos contratados` : ''}</p>
+      <p class="small muted" style="margin-top:-6px">Reservas cerradas en el mes (según la fecha en que contrataron): <b>${tomadosVer.length}</b></p>
       ${tomadosVer.length ? `<ul class="list-clean">${tomadosVer.map(e => `<li data-go="evento/${e.id}" style="cursor:pointer"><div><b>${fmtDL(e.fecha)}</b> · ${esc(tituloEv(e))}<div class="small muted">${esc(nombreCli(cli(e.clienteId)))} · contrató el ${fmtD(e.fechaContratacion)}</div></div>${badgeEstado(e)}</li>`).join('')}</ul>` : '<p class="muted">No se tomaron eventos ese mes.</p>'}
     </div>
     <div class="panel"><div class="panel-h"><h2>Próximos eventos</h2><a href="#/calendario">Ver calendario</a></div>
