@@ -338,3 +338,7 @@ tr.sep-row td{background:var(--gris);font-size:.78rem;text-transform:uppercase;l
 html[data-theme="dark"] .inv-edad.joven{background:#1d3347;color:#9cc4ea;border-color:#2f4f6c}
 .inv-alta{grid-template-columns:1fr 1fr}
 .inv-busca{width:100%}
+.inv-edad.nino{background:#eef7ea;color:#3d7a2a;border-color:#c5e0b9}
+.inv-edad.bebe{background:#fbeef4;color:#a8406f;border-color:#efc6d8}
+html[data-theme="dark"] .inv-edad.nino{background:#22351c;color:#a6d494;border-color:#3b5a31}
+html[data-theme="dark"] .inv-edad.bebe{background:#3a2130;color:#eba9c7;border-color:#5e3349}

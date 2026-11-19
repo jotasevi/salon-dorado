@@ -2629,7 +2629,12 @@ const espDelPlano = e => planoItems(e).filter(esMesa).sort(ordenMesa).flatMap(m 
 /* invitados por mesa: item.inv = [{ id, nombre, edad: 'adulto' | 'joven' | '', menu: '' (común) o el tipo de menú especial }].
    item.esp se sigue guardando, sacado de inv, para todo lo que ya lo usa (dibujo, hoja de servicio, portal viejo).
    Las mesas viejas que solo tienen esp se muestran como invitados con ese menú. */
-const EDADES = { adulto: 'Adulto', joven: 'Joven' };
+const EDADES = { adulto: 'Adulto', joven: 'Joven', nino: 'Niño', bebe: 'Bebé' };
+// para el número final: adultos y jóvenes = 1 cubierto, niños de 4 a 10 = ½, menores de 4 no pagan
+const EDAD_LARGO = { adulto: 'Adulto', joven: 'Joven', nino: 'Niño (4 a 10 años)', bebe: 'Bebé (menor de 4)' };
+const EDAD_CORTO = { adulto: 'ad.', joven: 'jóv.', nino: 'niñ.', bebe: 'beb.' };
+const EDAD_PL = { adulto: ['adulto', 'adultos'], joven: ['joven', 'jóvenes'], nino: ['niño', 'niños'], bebe: ['bebé', 'bebés'] };
+const EDAD_K = { adulto: 'ad', joven: 'jo', nino: 'ni', bebe: 'be' };
 let INV_EDAD = 'adulto';   // la última edad elegida, para no tener que cambiarla en cada invitado
 const invDe = m => Array.isArray(m.inv) ? m.inv : (m.esp || []).map(x => ({ id: x.id, nombre: x.nombre, edad: '', menu: x.tipo || '' }));
 const conInv = (m, inv) => ({ inv, esp: inv.filter(x => x.menu).map(x => ({ id: x.id, nombre: x.nombre, tipo: x.menu })), pers: Math.max(num(m.pers), inv.length) || null });
@@ -2638,16 +2643,21 @@ const porNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre
 // todos los invitados del plano, por orden alfabético: [{ id, nombre, edad, menu, mesa, mesaId }]
 const invitadosPlano = items => items.filter(esMesa).flatMap(m => invDe(m).map(x => ({ ...x, mesa: nombreMesaCorto(m), mesaId: m.id }))).sort(porNombre);
 const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
-const cuentaEdades = L => ({ ad: L.filter(x => x.edad === 'adulto').length, jo: L.filter(x => x.edad === 'joven').length, sin: L.filter(x => !EDADES[x.edad]).length });
+const cuentaEdades = L => ({ ad: L.filter(x => x.edad === 'adulto').length, jo: L.filter(x => x.edad === 'joven').length, ni: L.filter(x => x.edad === 'nino').length, be: L.filter(x => x.edad === 'bebe').length, sin: L.filter(x => !EDADES[x.edad]).length });
+const hayEdades = c => !!(c.ad || c.jo || c.ni || c.be);
+// "3 adultos · 2 jóvenes · 1 niño" (adultos y jóvenes siempre; niños y bebés si hay)
+const textoEdades = c => [...Object.keys(EDADES).filter(k => c[EDAD_K[k]] || k === 'adulto' || k === 'joven').map(k => plural(c[EDAD_K[k]], ...EDAD_PL[k])), ...(c.sin ? [`${c.sin} sin marcar`] : [])].join(' · ');
+// "3 ad. · 2 jóv." (solo lo que hay)
+const cortoEdades = c => Object.keys(EDADES).filter(k => c[EDAD_K[k]]).map(k => `${c[EDAD_K[k]]} ${EDAD_CORTO[k]}`);
 // bloque "Invitados de esta mesa" (lo usan el editor de los dueños, pref 'pl', y el cliente, pref 'pp')
 function invBloque(m, tipos, pref) {
   const inv = invDe(m), opts = v => `<option value="" ${!v ? 'selected' : ''}>Común</option>${[...new Set([...tipos, ...(v ? [v] : [])])].map(t => `<option ${t === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}`;
   return `<div class="plano-esp"><div class="small" style="font-weight:600;margin-bottom:4px">Invitados de esta mesa${inv.length ? ` (${inv.length})` : ''}</div>
     ${inv.length ? `<ul class="list-clean inv-lista">${[...inv].sort(porNombre).map(x => `<li><div class="inv-nom"><b>${esc(x.nombre)}</b>${x.menu ? ` <span class="small nowrap"><span class="esp-dot"></span> ${esc(x.menu)}</span>` : ''}</div>
-      <div class="inv-ctl"><button type="button" class="btn-sm inv-edad ${EDADES[x.edad] ? x.edad : 'sin'}" data-invedad="${esc(x.id)}" title="Tocá para cambiar">${EDADES[x.edad] || '¿Adulto o joven?'}</button><select class="inv-menu" data-invmenu="${esc(x.id)}" aria-label="Menú de ${esc(x.nombre)}">${opts(x.menu)}</select><button type="button" class="btn-sm" data-invdel="${esc(x.id)}" title="Sacar">✕</button></div></li>`).join('')}</ul>` : ''}
+      <div class="inv-ctl"><button type="button" class="btn-sm inv-edad ${EDADES[x.edad] ? x.edad : 'sin'}" data-invedad="${esc(x.id)}" title="Tocá para cambiar">${EDADES[x.edad] || '¿Edad?'}</button><select class="inv-menu" data-invmenu="${esc(x.id)}" aria-label="Menú de ${esc(x.nombre)}">${opts(x.menu)}</select><button type="button" class="btn-sm" data-invdel="${esc(x.id)}" title="Sacar">✕</button></div></li>`).join('')}</ul>` : ''}
     <div class="fgrid inv-alta" style="margin-top:6px">
       <label class="f full"><span>Nombre y apellido</span><input id="${pref}IN" placeholder="Ej.: Laura Gómez" maxlength="80" autocomplete="off"></label>
-      <label class="f"><span>Edad</span><select id="${pref}IE">${Object.entries(EDADES).map(([k, v]) => `<option value="${k}" ${k === INV_EDAD ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="f"><span>Edad</span><select id="${pref}IE">${Object.entries(EDAD_LARGO).map(([k, v]) => `<option value="${k}" ${k === INV_EDAD ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="f"><span>Menú</span><select id="${pref}IM">${opts('')}</select></label></div>
     <button class="btn-sm" id="${pref}IA" style="margin-top:6px">+ Agregar invitado</button></div>`;
 }
@@ -2659,17 +2669,17 @@ function invHandlers(cont, m, pref, cambiarInv) {
     setTimeout(() => { const n = document.getElementById(pref + 'IN'); if (n) n.focus(); }, 40); };
   if ($c('#' + pref + 'IA')) { $c('#' + pref + 'IA').onclick = agregar; $c('#' + pref + 'IN').onkeydown = ev_ => { if (ev_.key === 'Enter') { ev_.preventDefault(); agregar(); } }; }
   if ($c('#' + pref + 'IE')) $c('#' + pref + 'IE').onchange = ev_ => { INV_EDAD = ev_.target.value; };
-  cont.querySelectorAll('[data-invedad]').forEach(b => b.onclick = () => cambiarInv(inv.map(x => x.id === b.dataset.invedad ? { ...x, edad: x.edad === 'adulto' ? 'joven' : 'adulto' } : x)));
+  cont.querySelectorAll('[data-invedad]').forEach(b => b.onclick = () => cambiarInv(inv.map(x => x.id === b.dataset.invedad ? { ...x, edad: { adulto: 'joven', joven: 'nino', nino: 'bebe', bebe: 'adulto' }[x.edad] || 'adulto' } : x)));
   cont.querySelectorAll('[data-invmenu]').forEach(sl => sl.onchange = () => cambiarInv(inv.map(x => x.id === sl.dataset.invmenu ? { ...x, menu: sl.value } : x)));
   cont.querySelectorAll('[data-invdel]').forEach(b => b.onclick = () => cambiarInv(inv.filter(x => x.id !== b.dataset.invdel)));
 }
 // lista de todos los invitados por orden alfabético, con buscador; attrMesa(id) hace que al tocar uno se abra su mesa
 function invListaHTML(items, attrMesa) {
   const L = invitadosPlano(items), c = cuentaEdades(L);
-  if (!L.length) return '<p class="small muted">Todavía no hay invitados anotados. Tocá una mesa para agregarlos con su nombre, si es adulto o joven y su menú.</p>';
-  return `<div class="small muted" style="margin-bottom:6px"><b>${L.length}</b> invitados · ${plural(c.ad, 'adulto', 'adultos')} · ${plural(c.jo, 'joven', 'jóvenes')}${c.sin ? ` · ${c.sin} sin marcar` : ''}${L.some(x => x.menu) ? ` · <span class="esp-dot"></span> ${L.filter(x => x.menu).length} con menú especial` : ''}</div>
+  if (!L.length) return '<p class="small muted">Todavía no hay invitados anotados. Tocá una mesa para agregarlos con su nombre, su edad (adulto, joven, niño o bebé) y su menú.</p>';
+  return `<div class="small muted" style="margin-bottom:6px"><b>${L.length}</b> invitados · ${textoEdades(c)}${L.some(x => x.menu) ? ` · <span class="esp-dot"></span> ${L.filter(x => x.menu).length} con menú especial` : ''}</div>
     <input class="inv-busca" data-invbusca placeholder="Buscar un invitado…" autocomplete="off" style="margin-bottom:6px">
-    <ul class="list-clean inv-az">${L.map(x => `<li data-q="${esc((x.nombre + ' ' + x.mesa).toLowerCase())}" ${attrMesa ? attrMesa(x.mesaId) : ''}><div><b>${esc(x.nombre)}</b><div class="small muted">${EDADES[x.edad] || 'Sin marcar'}${x.menu ? ` · <span class="esp-dot"></span> ${esc(x.menu)}` : ''}</div></div><div class="small nowrap">${esc(x.mesa)}</div></li>`).join('')}</ul>`;
+    <ul class="list-clean inv-az">${L.map(x => `<li data-q="${esc((x.nombre + ' ' + x.mesa).toLowerCase())}" ${attrMesa ? attrMesa(x.mesaId) : ''}><div><b>${esc(x.nombre)}</b><div class="small muted">${EDAD_LARGO[x.edad] || 'Sin marcar'}${x.menu ? ` · <span class="esp-dot"></span> ${esc(x.menu)}` : ''}</div></div><div class="small nowrap">${esc(x.mesa)}</div></li>`).join('')}</ul>`;
 }
 function invBuscaHandler(cont) {
   const b = cont.querySelector('[data-invbusca]'); if (!b) return;
@@ -2715,7 +2725,8 @@ function itemSVG(it, sel, imp) {
   if (it.nom) lineas.push([it.nom.length > 18 ? it.nom.slice(0, 17) + '…' : it.nom, 14, 'normal', '#444']);
   if (p) lineas.push([`${p} pers.`, 14, 'normal', over ? st : '#8a7a63']);
   const ce = cuentaEdades(invDe(it));
-  if (esMesa(it) && (ce.ad || ce.jo)) lineas.push([[ce.ad ? `${ce.ad} ad.` : '', ce.jo ? `${ce.jo} jóv.` : ''].filter(Boolean).join(' · '), 13, 'normal', '#2c6fb0']);
+  const ct = esMesa(it) ? cortoEdades(ce) : [];
+  for (let i = 0; i < ct.length; i += 2) lineas.push([ct.slice(i, i + 2).join(' · '), 13, 'normal', '#2c6fb0']);   // de a 2 por renglón, para que entre en la mesa
   const alto = sum(lineas, l => l[1] + 3); let y = -alto / 2;
   const textos = lineas.filter(l => l[0]).map(([t, fs, fw, c]) => { y += fs + 3; return `<text text-anchor="middle" y="${(y - 5).toFixed(1)}" font-size="${fs}" font-weight="${fw}" fill="${c}" stroke="#fff" stroke-width="4" paint-order="stroke">${esc(t)}</text>`; }).join('');
   const ne = (it.esp || []).length;
@@ -2761,7 +2772,7 @@ VIEWS.plano = id => {
   } else {
     const tabs = `<div class="tema-sel" style="margin:0 0 10px">${[['mesas', 'Mesas'], ['inv', 'Invitados A‑Z']].map(([k, n]) => `<button type="button" data-pltab="${k}" class="${PLANO_TAB === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
     lado = PLANO_TAB === 'inv' ? `${tabs}${invListaHTML(items, mid => `data-plsel="${mid}" style="cursor:pointer"`)}${invitadosPlano(items).length ? '<button class="btn-sm" id="plImpInv" style="margin-top:10px">🖨️ Imprimir solo la lista</button>' : ''}` : `${tabs}
-      ${mesas.length ? `<ul class="list-clean plano-lista">${mesas.map(m => `<li data-plsel="${m.id}" style="cursor:pointer"><div><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}<div class="small muted">${MESA_T[m.t].nom}${(m.esp || []).length ? ` · <span class="esp-dot"></span> ${m.esp.length} ${m.esp.length === 1 ? 'menú especial' : 'menús especiales'}` : ''}${(() => { const c = cuentaEdades(invDe(m)); return c.ad || c.jo ? ` · ${c.ad} ad. · ${c.jo} jóv.` : ''; })()}</div></div>
+      ${mesas.length ? `<ul class="list-clean plano-lista">${mesas.map(m => `<li data-plsel="${m.id}" style="cursor:pointer"><div><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}<div class="small muted">${MESA_T[m.t].nom}${(m.esp || []).length ? ` · <span class="esp-dot"></span> ${m.esp.length} ${m.esp.length === 1 ? 'menú especial' : 'menús especiales'}` : ''}${(() => { const c = cortoEdades(cuentaEdades(invDe(m))); return c.length ? ' · ' + c.join(' · ') : ''; })()}</div></div>
         <div class="right nowrap small">${num(m.pers) ? `<b style="${num(m.pers) > capMesa(m) ? `color:${m.t === 'ppal' ? '#b8740e' : 'var(--rojo)'}` : ''}">${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`
       : '<p class="muted small">No hay mesas.</p>'}
       <p class="small muted" style="margin-bottom:0">Tocá una mesa (acá o en el plano) para anotar sus invitados, girarla o sacarla.</p>`;
@@ -2773,7 +2784,7 @@ VIEWS.plano = id => {
     <div class="card ${rectUsadas(items) > maxRect() ? 'bad' : ''}"><div class="k">Mesas rectangulares usadas</div><div class="v">${rectUsadas(items)} de ${maxRect()}</div><div class="small muted">Cada cuadrada usa 2</div></div>
     <div class="card"><div class="k">Lugares (máximo)</div><div class="v">${r.lugares}</div></div>
     <div class="card ${r.inv && falta > 0 ? 'warn' : r.inv ? 'good' : ''}"><div class="k">Personas ubicadas</div><div class="v">${r.asig}</div>${r.inv ? `<div class="small muted">${falta > 0 ? `Faltan ubicar ${falta}` : falta < 0 ? `${-falta} más que los invitados` : 'Están todos'} · ${r.inv.n} invitados (${r.inv.de})</div>` : ''}</div>
-    ${r.anot ? `<div class="card"><div class="k">Invitados anotados</div><div class="v">${r.anot}</div><div class="small muted">${plural(r.ad, 'adulto', 'adultos')} · ${plural(r.jo, 'joven', 'jóvenes')}${r.sin ? ` · ${r.sin} sin marcar` : ''}</div></div>` : ''}
+    ${r.anot ? `<div class="card"><div class="k">Invitados anotados</div><div class="v">${r.anot}</div><div class="small muted">${textoEdades(r)}</div>${r.ni || r.be ? `<div class="small muted">Para el número final: ${r.ad + r.jo} ${r.ad + r.jo === 1 ? 'adulto o joven' : 'adultos y jóvenes'} · ${plural(r.ni, 'niño', 'niños')} de 4 a 10 · ${plural(r.be, 'menor', 'menores')} de 4</div>` : ''}</div>` : ''}
     ${r.espTot || r.espUb ? `<div class="card ${r.espTot && r.espUb < r.espTot ? 'warn' : 'good'}"><div class="k"><span class="esp-dot"></span> Menús especiales ubicados</div><div class="v">${r.espUb}${r.espTot ? ` de ${r.espTot}` : ''}</div>${r.espTot && r.espUb < r.espTot ? `<div class="small muted">Faltan ${r.espTot - r.espUb}: tocá la mesa y elegí el menú del invitado</div>` : r.espTot && r.espUb > r.espTot ? `<div class="small muted">Cargados en Bebida y menús especiales: ${r.espTot}</div>` : ''}</div>` : ''}
   </div>` : ''}
   ${r.asig > r.cap || (r.inv && r.inv.n > r.cap) ? `<div class="alert warn">Ojo: el salón tiene capacidad para <b>${r.cap}</b> personas como máximo${r.asig > r.cap ? ` y hay ${r.asig} ubicadas` : ` y figuran ${r.inv.n} invitados`}.</div>` : ''}
@@ -2922,18 +2933,19 @@ VIEWS.planohoja = id => {
   const mesas = items.filter(esMesa).sort(ordenMesa), r = resumenPlano(e), O = PLANO_OPTS;
   const img = O.dibujo ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(planoSVG(items, null, `width="${PLANO_W * 2}" height="${PLANO_H * 2}"`, true)) : '';
   // cada parte arranca en hoja nueva, salvo la primera si no va el dibujo
+  const cols = Object.keys(EDADES).filter(k => r[EDAD_K[k]] || (hayEdades(r) && (k === 'adulto' || k === 'joven')));   // columnas de edad en la tabla de mesas
   const partes = [
     O.lista ? `<h2>Mesas</h2>
-    <table><thead><tr><th>Mesa</th><th>Quiénes</th><th class="num">Personas</th>${r.ad || r.jo ? '<th class="num">Adultos</th><th class="num">Jóvenes</th>' : ''}${r.espUb ? '<th>Menús especiales</th>' : ''}</tr></thead><tbody>
-    ${mesas.map(m => `<tr><td class="nowrap"><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b> <span style="color:#777">${m.t === 'red' ? 'redonda' : m.t === 'rect' ? 'rectangular' : m.t === 'cuad' ? 'cuadrada' : ''}</span></td><td>${esc(m.nom || '')}</td><td class="num">${num(m.pers) || ''}</td>${r.ad || r.jo ? (() => { const c = cuentaEdades(invDe(m)); return `<td class="num">${c.ad || ''}</td><td class="num">${c.jo || ''}</td>`; })() : ''}${r.espUb ? `<td>${(m.esp || []).map(x => `${esc(x.nombre)} <span style="color:#777">(${esc(x.tipo || '')})</span>`).join('<br>')}</td>` : ''}</tr>`).join('')}
-    </tbody><tfoot><tr><td colspan="2">Total</td><td class="num">${r.asig || ''}</td>${r.ad || r.jo ? `<td class="num">${r.ad}</td><td class="num">${r.jo}</td>` : ''}${r.espUb ? `<td>${r.espUb}</td>` : ''}</tr></tfoot></table>` : '',
+    <table><thead><tr><th>Mesa</th><th>Quiénes</th><th class="num">Personas</th>${cols.map(k => `<th class="num">${EDAD_PL[k][1][0].toUpperCase() + EDAD_PL[k][1].slice(1)}</th>`).join('')}${r.espUb ? '<th>Menús especiales</th>' : ''}</tr></thead><tbody>
+    ${mesas.map(m => `<tr><td class="nowrap"><b>${m.t === 'ppal' ? 'Principal' : 'Mesa ' + esc(m.n || '?')}</b> <span style="color:#777">${m.t === 'red' ? 'redonda' : m.t === 'rect' ? 'rectangular' : m.t === 'cuad' ? 'cuadrada' : ''}</span></td><td>${esc(m.nom || '')}</td><td class="num">${num(m.pers) || ''}</td>${(() => { const c = cuentaEdades(invDe(m)); return cols.map(k => `<td class="num">${c[EDAD_K[k]] || ''}</td>`).join(''); })()}${r.espUb ? `<td>${(m.esp || []).map(x => `${esc(x.nombre)} <span style="color:#777">(${esc(x.tipo || '')})</span>`).join('<br>')}</td>` : ''}</tr>`).join('')}
+    </tbody><tfoot><tr><td colspan="2">Total</td><td class="num">${r.asig || ''}</td>${cols.map(k => `<td class="num">${r[EDAD_K[k]]}</td>`).join('')}${r.espUb ? `<td>${r.espUb}</td>` : ''}</tr></tfoot></table>` : '',
     O.esp && r.espUb ? `<h2>Menús especiales</h2>
     <table><thead><tr><th>Nombre y apellido</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
     ${espDelPlano(e).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.tipo || '')}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : '',
     O.inv && r.anot ? `<h2>Invitados (por orden alfabético)</h2>
-    <div style="color:#777;margin-bottom:6px">${r.anot} invitados · ${plural(r.ad, 'adulto', 'adultos')} · ${plural(r.jo, 'joven', 'jóvenes')}${r.sin ? ` · ${r.sin} sin marcar` : ''}</div>
+    <div style="color:#777;margin-bottom:6px">${r.anot} invitados · ${textoEdades(r)}</div>
     <table><thead><tr><th>Nombre y apellido</th><th>Edad</th><th>Menú</th><th>Mesa</th></tr></thead><tbody>
-    ${invitadosPlano(items).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${EDADES[x.edad] || ''}</td><td>${x.menu ? esc(x.menu) : '<span style="color:#999">Común</span>'}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : '',
+    ${invitadosPlano(items).map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td>${EDAD_LARGO[x.edad] || ''}</td><td>${x.menu ? esc(x.menu) : '<span style="color:#999">Común</span>'}</td><td class="nowrap">${esc(x.mesa)}</td></tr>`).join('')}</tbody></table>` : '',
   ].filter(Boolean).map((h, i) => i || O.dibujo ? h.replace('<h2>', '<h2 style="break-before:page;page-break-before:always">') : h);
   const titulo = !O.dibujo && !O.lista && !(O.esp && r.espUb) && O.inv && r.anot ? 'Lista de invitados' : 'Plano de mesas';
   const chk = (k, t) => `<label class="chk"><input type="checkbox" data-plo="${k}" ${O[k] ? 'checked' : ''}> ${t}</label>`;
@@ -3100,7 +3112,7 @@ function planoCliente(P, token, cont) {
       lado = tab === 'inv' ? tabs + invListaHTML(P.items, editar ? mid => `data-ppsel="${mid}" style="cursor:pointer"` : null) : `${tabs}<ul class="list-clean">${ms.map(m => `<li ${editar ? `data-ppsel="${m.id}" style="cursor:pointer"` : ''}><div><b>${esc(nombreMesa(m))}</b>${m.nom ? ` · ${esc(m.nom)}` : ''}${(m.esp || []).length ? `<div class="small muted"><span class="esp-dot"></span> ${m.esp.map(x => `${esc(x.nombre)} (${esc(x.tipo || '')})`).join(', ')}</div>` : ''}</div>
         <div class="right nowrap small">${num(m.pers) ? `<b>${num(m.pers)}</b>` : '<span class="muted">—</span>'} / ${capMesa(m)}</div></li>`).join('')}</ul>`;
     }
-    cont.innerHTML = `<div class="panel" style="margin-bottom:12px"><p style="margin:0 0 6px">${editar ? 'Tocá cada mesa para anotar a los <b>invitados</b>: nombre y apellido, si es <b>adulto o joven</b> y si come un <b>menú especial</b>. Se guarda solo. En <b>Invitados A‑Z</b> ves a todos por orden alfabético. La ubicación de las mesas la define Salón Dorado.' : 'Así quedó el plano de mesas de tu evento.'}</p>
+    cont.innerHTML = `<div class="panel" style="margin-bottom:12px"><p style="margin:0 0 6px">${editar ? 'Tocá cada mesa para anotar a los <b>invitados</b>: nombre y apellido, si es <b>adulto, joven, niño o bebé</b> y si come un <b>menú especial</b>. Se guarda solo. En <b>Invitados A‑Z</b> ves a todos por orden alfabético. La ubicación de las mesas la define Salón Dorado.' : 'Así quedó el plano de mesas de tu evento.'}</p>
         <div class="small muted">${ms.length} mesas · <b>${asig}</b> personas ubicadas${P.inv ? ` de ${P.inv.n} invitados` : ''}${espUb ? ` · <span class="esp-dot"></span> ${espUb} ${espUb === 1 ? 'menú especial' : 'menús especiales'}` : ''} <span id="ppEstado" style="margin-left:6px"></span></div>
         ${asig > P.cap ? `<div class="alert warn" style="margin:8px 0 0">El salón tiene capacidad para <b>${P.cap}</b> personas como máximo.</div>` : ''}</div>
       <div class="plano-wrap"><div>${planoSVG(P.items, sel, 'id="cliSvg"')}</div><div class="panel plano-side">${lado}</div></div>`;
