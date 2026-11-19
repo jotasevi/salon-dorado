@@ -525,21 +525,29 @@ const go = h => { location.hash = '#/' + h; };
 function route() { const h = decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'inicio'; const [view, ...args] = h.split('/'); return { view, args }; }
 
 const VIEWS = {};
-/* ---------- tema claro / oscuro (se recuerda en cada dispositivo) ---------- */
+/* ---------- modos de color: claro, oscuro y dorado (se recuerda en cada dispositivo) ----------
+   "dorado" usa todo lo del oscuro (data-theme="dark") y le cambia la paleta con data-estilo="dorado". */
 const TEMA_KEY = 'salonDorado.tema';
-function temaGuardado() { try { return localStorage.getItem(TEMA_KEY); } catch (e) { return null; } }
+const TEMAS = [['light', '☀️', 'Claro'], ['dark', '🌙', 'Oscuro'], ['dorado', '✨', 'Dorado']];
+function temaGuardado() { try { const t = localStorage.getItem(TEMA_KEY); return TEMAS.some(x => x[0] === t) ? t : null; } catch (e) { return null; } }
 function temaActual() { return temaGuardado() || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
 function aplicarTema() {
-  const t = temaActual();
-  document.documentElement.dataset.theme = t;
-  const mc = document.querySelector('meta[name=theme-color]'); if (mc) mc.content = t === 'dark' ? '#1b1a18' : '#2b2a28';
-  const b = document.getElementById('tema'); if (b) b.textContent = t === 'dark' ? '☀️ Modo claro' : '🌙 Modo oscuro';
+  const t = temaActual(), html = document.documentElement;
+  html.dataset.theme = t === 'light' ? 'light' : 'dark';
+  html.dataset.estilo = t;
+  const mc = document.querySelector('meta[name=theme-color]'); if (mc) mc.content = { light: '#2b2a28', dark: '#1b1a18', dorado: '#0d0c0a' }[t];
+  const b = document.getElementById('tema');
+  if (b) b.innerHTML = TEMAS.map(([k, ic, n]) => `<button type="button" data-tema="${k}" class="${k === t ? 'on' : ''}" title="Modo ${n.toLowerCase()}" aria-pressed="${k === t}">${ic} ${n}</button>`).join('');
 }
-function cambiarTema() {
-  try { localStorage.setItem(TEMA_KEY, temaActual() === 'dark' ? 'light' : 'dark'); } catch (e) { }
+function cambiarTema(t) {
+  try { localStorage.setItem(TEMA_KEY, t); } catch (e) { }
   aplicarTema();
 }
 aplicarTema();
+// app instalable y siempre al día: el service worker (sw.js) trae la última versión cada vez que se abre
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('sin service worker', err)));
+}
 if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!temaGuardado()) aplicarTema(); });
 
 /* ---------- nombre para el saludo de Inicio ---------- */
@@ -819,7 +827,7 @@ function render() {
   if (!SHELL) {
     root.innerHTML = `<div class="app"><nav class="side"><img src="${LOGO}" alt="Salón Dorado">
       ${NAV.map(([k, t]) => `<a href="#/${k}" data-nav="${k}">${t}</a>`).join('')}
-      <a href="#" id="tema" class="tema-btn"></a>
+      <div id="tema" class="tema-sel" role="group" aria-label="Modo de color"></div>
       <div class="user">${DB.mode === 'demo' ? 'Modo demostración' : esc(DB.user.email) + ' · <a href="#" id="logout" style="display:inline;padding:0">Salir</a>'}</div></nav>
       <main id="main"></main></div>
       <div class="navbtns no-print"><button id="navAtras" title="Atrás" aria-label="Atrás">‹</button><button id="navAdel" title="Adelante" aria-label="Adelante">›</button></div>`;
@@ -827,7 +835,7 @@ function render() {
     $('#navAtras').onclick = () => history.back();
     $('#navAdel').onclick = () => history.forward();
     const lo = $('#logout'); if (lo) lo.onclick = e => { e.preventDefault(); DB.logout(); };
-    $('#tema').onclick = e => { e.preventDefault(); cambiarTema(); };
+    $('#tema').onclick = e => { const b = e.target.closest('[data-tema]'); if (b) cambiarTema(b.dataset.tema); };
     aplicarTema();
   }
   const { view, args } = route();

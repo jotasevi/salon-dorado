@@ -164,7 +164,9 @@ main,.grid2>*,.grid3>*,.panel{min-width:0}
 @media (max-width:560px){.esp-row{grid-template-columns:1fr 64px}.esp-row input[name^="espd_"]{grid-column:1/-1}}
 
 /* ====== modo oscuro (solo en pantalla: la impresión sale siempre en blanco) ====== */
-.tema-btn{display:block;padding:.55em .8em;border-radius:8px;text-decoration:none;color:var(--ink);cursor:pointer}
+.tema-sel{display:flex;gap:4px;margin:10px 4px 0;padding:3px;background:var(--gris);border-radius:9px}
+.tema-sel button{flex:1;justify-content:center;border:none;background:transparent;padding:.35em .2em;font-size:.78rem;border-radius:7px;color:var(--muted)}
+.tema-sel button.on{background:var(--gold-soft);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--gold)}
 @media screen{
   html[data-theme="dark"]{color-scheme:dark;
     --bg:#1b1a18; --panel:#252321; --ink:#ece6dc; --muted:#a59d91; --line:#3a3632;
@@ -278,3 +280,23 @@ tr.sep-row td{background:var(--gris);font-size:.78rem;text-transform:uppercase;l
 .pers-tbl td,.pers-tbl th{border:1px solid #bbb;padding:7px 8px}
 .pers-tbl tbody tr:nth-child(even) td{background:#f3f3f3}
 .pers-otros{display:grid;grid-template-columns:1fr 1fr;gap:6px 30px;font-size:13px}
+
+/* ====== modo dorado: negro profundo con dorado más marcado (se apoya en el modo oscuro) ====== */
+@media screen{
+  html[data-theme="dark"][data-estilo="dorado"]{
+    --bg:#0d0c0a; --panel:#16140f; --ink:#f4ead4; --muted:#ad9f80; --line:#3b3220;
+    --gold:#e4b25c; --gold-2:#c8963f; --gold-soft:#33270f; --gris:#1f1b13;
+    --shadow:0 1px 3px rgba(0,0,0,.5),0 6px 18px rgba(0,0,0,.35);
+  }
+  html[data-theme="dark"][data-estilo="dorado"] body{background:radial-gradient(ellipse at top,#1a160d 0%,#0d0c0a 60%) fixed}
+  html[data-theme="dark"][data-estilo="dorado"] h1:not(.print-doc *),html[data-theme="dark"][data-estilo="dorado"] h2:not(.print-doc *){color:#ecc276}
+  html[data-theme="dark"][data-estilo="dorado"] a:not(.print-doc *){color:#ecc276}
+  html[data-theme="dark"][data-estilo="dorado"] .panel{border-color:#4a3c1f;border-top:2px solid #b58a3c}
+  html[data-theme="dark"][data-estilo="dorado"] .card,html[data-theme="dark"][data-estilo="dorado"] th:not(.print-doc *),html[data-theme="dark"][data-estilo="dorado"] tfoot td:not(.print-doc *){background:#1d1910}
+  html[data-theme="dark"][data-estilo="dorado"] .card .v{color:#f0cb85}
+  html[data-theme="dark"][data-estilo="dorado"] tr.click:hover td{background:#241e12}
+  html[data-theme="dark"][data-estilo="dorado"] .side{background:#100e0a;border-right-color:#3b3220}
+  html[data-theme="dark"][data-estilo="dorado"] .side a.on{background:#2b210d;color:#f0cb85;box-shadow:inset 3px 0 0 #e4b25c}
+  html[data-theme="dark"][data-estilo="dorado"] .btn-primary,html[data-theme="dark"][data-estilo="dorado"] .btn-gold,html[data-theme="dark"][data-estilo="dorado"] .year-tabs a.on{background:linear-gradient(180deg,#efc57a,#c8963f);border-color:#c8963f;color:#15120b}
+  html[data-theme="dark"][data-estilo="dorado"] .side img{filter:invert(1) hue-rotate(180deg) sepia(1) saturate(2.2) brightness(.95)}
+}
