@@ -2596,6 +2596,15 @@ const PLANO_BASE = { id: 'base', nombre: 'Plano 10 y 8 mix', items: [
   ['red', 197, 937], ['rect', 399, 960, 35], ['red', 597, 950], ['rect', 797, 950, 35],
   ['rect', 197, 1142, 35], ['red', 371, 1165], ['rect', 591, 1142, 35], ['red', 781, 1165],
 ].map(([t, x, y, r]) => ({ t, x, y, r: r || 0 })) };
+// "18 redondas": el mismo plano de siempre, con las rectangulares cambiadas por redondas y las filas alineadas
+const PLANO_18 = { id: 'red18', nombre: 'Plano 18 redondas', items: [
+  ...[120, 290, 460, 630, 800].map(x => ['red', x, 146]),
+  ...[120, 290, 460, 630, 800].map(x => ['red', x, 365]),
+  ['ppal', 117, 637, 0], ['pista', 540, 640, 0],
+  ...[200, 400, 600, 800].map(x => ['red', x, 950]),
+  ...[200, 400, 600, 800].map(x => ['red', x, 1160]),
+].map(([t, x, y, r]) => ({ t, x, y, r: r || 0 })) };
+const MODELOS_FIJOS = [PLANO_BASE, PLANO_18];
 const esMesa = it => it.t !== 'pista';
 // hay 10 mesas rectangulares en total (config/general.mesasRect): cada cuadrada usa 2
 const maxRect = () => num(CONF().mesasRect) || 10;
@@ -2628,7 +2637,9 @@ function numerarMesas(items) {
   return items.map(i => num_[i.id] ? { ...i, n: num_[i.id] } : i.t === 'ppal' && !i.n ? { ...i, n: 'P' } : i);
 }
 const desdeModelo = m => numerarMesas(m.items.map(i => ({ id: uid(), t: i.t, x: i.x, y: i.y, r: i.r || 0, n: i.n || '', nom: i.nom || '', pers: i.pers || null, esp: clean(i.esp || []) })));
-const modelosPlano = () => [PLANO_BASE, ...(((S.config.planos || {}).lista) || [])];
+// los modelos que vienen con la app se pueden ocultar (config/planos.ocultos); los guardados se borran de la lista
+const modelosOcultos = () => ((S.config.planos || {}).ocultos) || [];
+const modelosPlano = () => [...MODELOS_FIJOS.filter(m => !modelosOcultos().includes(m.id)), ...(((S.config.planos || {}).lista) || [])];
 
 function itemSVG(it, sel, imp) {
   const { w, h } = dimMesa(it), p = num(it.pers), cap = capMesa(it), over = !imp && cap && p > cap;   // en la hoja impresa, sin colores de aviso
@@ -2708,7 +2719,7 @@ VIEWS.plano = id => {
       <p class="small muted" style="margin-bottom:0">Tocá una mesa (acá o en el plano) para ponerle nombre, cantidad de personas, girarla o sacarla.</p>`;
   }
   return `<div class="top"><div><a href="#/evento/${id}" class="small">← Volver al evento</a><h1>Plano de mesas</h1><div class="muted">${esc(tituloEv(e))} · ${fmtDL(e.fecha)}</div></div>
-    <div class="actions"><button id="plModelo">Cargar modelo</button>${items.length ? `<button id="plGuardarM">Guardar como modelo</button><button class="btn-gold" data-go="planohoja/${id}">🖨️ Imprimir / PDF</button>` : ''}</div></div>
+    <div class="actions"><button id="plModelo">Cargar modelo</button>${items.length ? `<button id="plGuardarM">Guardar como modelo</button><button id="plBorrar" class="btn-danger">🗑️ Borrar plano</button><button class="btn-gold" data-go="planohoja/${id}">🖨️ Imprimir / PDF</button>` : ''}</div></div>
   ${items.length ? `<div class="cards">
     <div class="card"><div class="k">Mesas</div><div class="v">${r.mesas}</div><div class="small muted">${items.filter(i => i.t === 'red').length} redondas · ${items.filter(i => i.t === 'rect').length} rectangulares${items.some(i => i.t === 'cuad') ? ` · ${items.filter(i => i.t === 'cuad').length} cuadradas` : ''}${items.some(i => i.t === 'ppal') ? ' · principal' : ''}</div></div>
     <div class="card ${rectUsadas(items) > maxRect() ? 'bad' : ''}"><div class="k">Mesas rectangulares usadas</div><div class="v">${rectUsadas(items)} de ${maxRect()}</div><div class="small muted">Cada cuadrada usa 2</div></div>
@@ -2726,9 +2737,9 @@ VIEWS.plano = id => {
   <div class="plano-wrap">
     <div class="panel">
       <div class="plano-tools"><button class="btn-sm" data-pladd="red">+ Redonda</button>${(() => { const u = rectUsadas(items), mx = maxRect(); return `<button class="btn-sm" data-pladd="rect" ${u >= mx ? `disabled title="Ya se usan las ${mx} rectangulares"` : ''}>+ Rectangular</button><button class="btn-sm" data-pladd="cuad" ${u + 2 > mx ? `disabled title="No quedan 2 rectangulares libres"` : ''}>+ Cuadrada</button>`; })()}${items.some(i => i.t === 'ppal') ? '' : '<button class="btn-sm" data-pladd="ppal">+ Principal</button>'}${items.some(i => i.t === 'pista') ? '' : '<button class="btn-sm" data-pladd="pista">+ Pista</button>'}
-        <span style="flex:1"></span>${(PLANO_UNDO[id] || []).length ? '<button class="btn-sm" id="plUndo">↶ Deshacer</button>' : ''}${items.length ? '<button class="btn-sm" id="plNum" title="Numera las mesas por filas, de arriba a abajo">Numerar</button><button class="btn-sm" id="plVaciar">Vaciar</button>' : ''}</div>
+        <span style="flex:1"></span>${(PLANO_UNDO[id] || []).length ? '<button class="btn-sm" id="plUndo">↶ Deshacer</button>' : ''}${items.length ? '<button class="btn-sm" id="plNum" title="Numera las mesas por filas, de arriba a abajo">Numerar</button>' : ''}</div>
       ${items.length ? planoSVG(items, PLANO_SEL, 'id="plSvg"') + '<p class="small muted" style="margin:8px 0 0">Arrastrá las mesas con el dedo o el mouse para acomodarlas. Se guarda solo.</p>'
-        : `<div class="center" style="padding:40px 10px"><p>Este evento todavía no tiene plano.</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn-primary" id="plBase">Empezar con el ${esc(PLANO_BASE.nombre)}</button><button id="plModelo2">Elegir otro modelo</button></div><p class="small muted">O agregá mesas una por una con los botones de arriba.</p></div>`}
+        : `<div class="center" style="padding:40px 10px"><p>Este evento todavía no tiene plano.</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${modelosPlano().length ? `<button class="btn-primary" id="plBase">Empezar con el ${esc(modelosPlano()[0].nombre)}</button>` : ''}<button id="plModelo2">Elegir otro modelo</button></div><p class="small muted">O agregá mesas una por una con los botones de arriba.</p></div>`}
     </div>
     <div class="panel plano-side">${lado}</div>
   </div>`;
@@ -2745,7 +2756,7 @@ VIEWS.plano.after = id => {
     set([...items, nuevo], nuevo.id);
     toast('Mesa agregada en el medio: arrastrala a su lugar.');
   });
-  const base = () => { set(desdeModelo(PLANO_BASE), null); toast('Modelo cargado. Si no era este, tocá Deshacer.'); };
+  const base = () => { set(desdeModelo(modelosPlano()[0]), null); toast('Modelo cargado. Si no era este, tocá Deshacer.'); };
   if ($('#plBase')) $('#plBase').onclick = base;
   [$('#plModelo'), $('#plModelo2')].forEach(b => { if (b) b.onclick = () => elegirModeloPlano(id); });
   if ($('#plGuardarM')) $('#plGuardarM').onclick = () => guardarModeloPlano(id);
@@ -2754,7 +2765,7 @@ VIEWS.plano.after = id => {
   if ($('#plCli')) $('#plCli').onchange = ev_ => { const E = clean(ev(id)); E.plano = { ...(E.plano || {}), cliente: ev_.target.value }; DB.save('eventos', E);
     toast(ev_.target.value === 'editar' ? 'Listo: el cliente ya puede completar el plano desde su link.' : ev_.target.value === 'ver' ? 'El cliente ve el plano, sin poder cambiarlo.' : 'El plano ya no se muestra en el link del cliente.'); };
   if ($('#plLink')) $('#plLink').onclick = () => modalPortal(id);
-  if ($('#plVaciar')) $('#plVaciar').onclick = () => confirmar('¿Sacar todas las mesas del plano? (Se puede deshacer)', () => set([], null));
+  if ($('#plBorrar')) $('#plBorrar').onclick = () => confirmar('¿Borrar el plano de este evento? Se sacan todas las mesas con sus nombres y menús especiales. (Si te equivocás, tocá Deshacer)', () => { set([], null); toast('Plano borrado. Si fue sin querer, tocá Deshacer.'); });
   $$('[data-plsel]').forEach(li => li.onclick = () => { PLANO_SEL = li.dataset.plsel; PLANO_VER = true; render(); });
   // mesa elegida
   if (PLANO_VER && sel && angosto()) setTimeout(() => { const ps = $('.plano-side'); if (ps) ps.scrollIntoView({ block: 'start' }); }, 30);   // después de que render() reacomoda el scroll
@@ -2822,13 +2833,19 @@ function elegirModeloPlano(id) {
   const { close } = modal({
     title: 'Cargar un modelo de plano', submit: '',
     body: `<div class="full"><p class="small muted" style="margin-top:0">Reemplaza el plano de este evento (si te equivocás, tocá <b>Deshacer</b>). Después podés mover, agregar o sacar mesas.</p>
-      <ul class="list-clean">${ms.map(m => `<li><div><b>${esc(m.nombre)}</b>${m.id === 'base' ? ' <span class="badge b-ok">de siempre</span>' : ''}<div class="small muted">${desc(m)}</div></div>
-        <div class="nowrap"><button type="button" class="btn-sm btn-primary" data-cargar="${m.id}">Cargar</button>${m.id === 'base' ? '' : ` <button type="button" class="btn-sm" data-borrarm="${m.id}" title="Borrar este modelo">✕</button>`}</div></li>`).join('')}</ul>
-      ${ms.length === 1 ? '<p class="small muted">Cuando armes un plano que te guste, tocá <b>Guardar como modelo</b> para tenerlo acá.</p>' : ''}</div>`,
+      <ul class="list-clean">${ms.map(m => `<li><div><b>${esc(m.nombre)}</b>${MODELOS_FIJOS.some(x => x.id === m.id) ? ' <span class="badge b-ok">viene con la app</span>' : ''}<div class="small muted">${desc(m)}</div></div>
+        <div class="nowrap"><button type="button" class="btn-sm btn-primary" data-cargar="${m.id}">Cargar</button> <button type="button" class="btn-sm" data-borrarm="${m.id}" title="Borrar este modelo">✕</button></div></li>`).join('')}</ul>
+      ${!ms.length ? '<p class="small muted">No hay modelos.</p>' : ''}
+      ${!(S.config.planos || {}).lista || !S.config.planos.lista.length ? '<p class="small muted">Cuando armes un plano que te guste, tocá <b>Guardar como modelo</b> para tenerlo acá.</p>' : ''}
+      ${modelosOcultos().length ? '<p class="small"><a href="#" id="plMostrarFijos">Volver a mostrar los modelos que vienen con la app</a></p>' : ''}</div>`,
     onOpen: form => {
       $$('[data-cargar]', form).forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.cargar); close(); PLANO_SEL = null; guardarPlano(id, desdeModelo(m)); toast(`Cargado: ${m.nombre}.`); });
       $$('[data-borrarm]', form).forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.borrarm); close();
-        confirmar(`¿Borrar el modelo "${m.nombre}"? Los planos de los eventos no cambian.`, () => { const c = S.config.planos || { id: 'planos', lista: [] }; DB.save('config', { ...clean(c), id: 'planos', lista: (c.lista || []).filter(x => x.id !== m.id) }); toast('Modelo borrado.'); }); });
+        const fijo = MODELOS_FIJOS.some(x => x.id === m.id);
+        confirmar(`¿Borrar el modelo "${m.nombre}"? Los planos de los eventos no cambian.`, () => { const c = S.config.planos || { id: 'planos', lista: [] };
+          DB.save('config', fijo ? { ...clean(c), id: 'planos', ocultos: [...new Set([...modelosOcultos(), m.id])] } : { ...clean(c), id: 'planos', lista: (c.lista || []).filter(x => x.id !== m.id) });
+          toast(fijo ? 'Modelo borrado. Lo podés volver a mostrar desde Cargar modelo.' : 'Modelo borrado.'); }); });
+      const mf = $('#plMostrarFijos', form); if (mf) mf.onclick = ev_ => { ev_.preventDefault(); const c = S.config.planos || { id: 'planos', lista: [] }; close(); DB.save('config', { ...clean(c), id: 'planos', ocultos: [] }); toast('Listo: volvieron los modelos que vienen con la app.'); };
     },
   });
 }
