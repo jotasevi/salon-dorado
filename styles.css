@@ -326,3 +326,15 @@ tr.sep-row td{background:var(--gris);font-size:.78rem;text-transform:uppercase;l
 .plano-cli .f{margin:0;min-width:230px}
 #cliSvg .pm{cursor:pointer}
 #main button:disabled{opacity:.45;cursor:not-allowed}
+
+/* invitados por mesa (plano) */
+.inv-lista li{flex-wrap:wrap;gap:6px}
+.inv-nom{flex:1 1 140px;min-width:0}
+.inv-ctl{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.inv-menu{width:auto;max-width:140px;padding:3px 6px;font-size:.82rem}
+.inv-edad{min-width:64px;justify-content:center}
+.inv-edad.joven{background:#e6f0fa;color:#2c6fb0;border-color:#b9d3ec}
+.inv-edad.sin{color:var(--muted);border-style:dashed}
+html[data-theme="dark"] .inv-edad.joven{background:#1d3347;color:#9cc4ea;border-color:#2f4f6c}
+.inv-alta{grid-template-columns:1fr 1fr}
+.inv-busca{width:100%}
