@@ -1863,6 +1863,10 @@ function marcarPagadoSem(lunes, pid, v) {
 const personalLista = () => (S.config.personal || {}).lista || [];
 const turnosDia = f => ((S.config['turnos-' + ym(f)] || {}).dias || {})[f] || [];
 const ordenPersonal = (a, b) => (ROLES_PERSONAL.indexOf(a.rol) + 9) % 9 - (ROLES_PERSONAL.indexOf(b.rol) + 9) % 9 || (a.nombre || '').localeCompare(b.nombre || '');
+// secciones del personal (mismas categorías que los cobros + "Otros"), para que no se mezclen en las listas
+const SECCIONES = [...CATS_PAGO, ['otro', 'Otros']];
+const seccionDe = p => catDeRol(p.rol) || 'otro';
+const porSeccion = (pp, orden = ordenPersonal) => SECCIONES.map(([c, n]) => ({ c, n, pp: pp.filter(p => seccionDe(p) === c).sort(orden) })).filter(g => g.pp.length);
 const lunesDe = f => addDays(f, -((dow(f) + 6) % 7));
 const DIAS_C = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 let PERS_SEM = null, PERS_MES = null;
@@ -1911,7 +1915,7 @@ VIEWS.personal = () => {
   const cols = colsSemana(PERS_SEM);
   const lista = personalLista();
   const { fijos, refuerzo, otros } = filasSemana(cols, PERS_EXTRA);
-  const fila = p => `<tr><td><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}${p.activo === false ? ' · de baja' : ''}</span></td>${cols.map(f => { const st = estadoTurno(f, p.id); return `<td class="center"><button type="button" class="turno t-${st || 'nada'}" data-turno="${f}|${p.id}" aria-label="${esc(p.nombre)} ${fmtD(f)}">${st === 'si' ? 'Sí' : st === 'no' ? 'No puede' : ''}</button></td>`; }).join('')}</tr>`;
+  const fila = p => `<tr><td><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}${p.activo === false ? ' · de baja' : ''}</span>${esRefuerzo(p) ? ' <span class="badge b-warn">refuerzo</span>' : ''}</td>${cols.map(f => { const st = estadoTurno(f, p.id); return `<td class="center"><button type="button" class="turno t-${st || 'nada'}" data-turno="${f}|${p.id}" aria-label="${esc(p.nombre)} ${fmtD(f)}">${st === 'si' ? 'Sí' : st === 'no' ? 'No puede' : ''}</button></td>`; }).join('')}</tr>`;
   // resumen del mes
   const [yy, mm] = PERS_MES.split('-').map(Number), diasMes = new Date(yy, mm, 0).getDate();
   const delMes = [...Array(diasMes)].map((_, i) => `${PERS_MES}-${pad(i + 1)}`).filter(f => turnosDia(f).length);
@@ -1923,15 +1927,14 @@ VIEWS.personal = () => {
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-sm" id="semAnt">◀</button><b style="min-width:190px;text-align:center">Semana del ${fmtD(semana[0]).slice(0, 5)} al ${fmtD(semana[6])}</b><button class="btn-sm" id="semSig">▶</button><button class="btn-sm" data-go="personalhoja/${PERS_SEM}">🖨️ Imprimir semana</button>${PERS_SEM !== lunesDe(hoy) ? '<button class="btn-sm" id="semHoy">Esta semana</button>' : ''}</div></div>
     <p class="small muted" style="margin-top:-4px">Tocá cada casillero para ir cambiando: <b>Sí</b> → <b>No puede</b> → vacío. Se guarda solo. Aparecen viernes, sábado y domingo, y cualquier otro día con evento o feriado.</p>
     ${!lista.length ? '<p class="muted">Todavía no cargaste a nadie. Tocá <b>+ Agregar persona</b>.</p>' : `<table><thead><tr><th>Persona</th>${cols.map(encab).join('')}</tr></thead><tbody>
-      ${fijos.map(fila).join('')}
-      ${refuerzo.length ? `<tr class="sep-row"><td colspan="${cols.length + 1}">De refuerzo</td></tr>${refuerzo.map(fila).join('')}` : ''}
-      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${[[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras'], [ids.length - m - c, 'otro', 'otros']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).join(' · ')}</div>` : ''}${ids.length ? `<button class="btn-sm" data-copiar="${f}" style="margin-top:4px">Copiar lista</button>` : ''}</td>`; }).join('')}</tr></tfoot></table>
+      ${porSeccion([...fijos, ...refuerzo], (a, b) => esRefuerzo(a) - esRefuerzo(b) || ordenPersonal(a, b)).map(g => `<tr class="sep-row"><td colspan="${cols.length + 1}">${esc(g.n)}</td></tr>${g.pp.map(fila).join('')}`).join('')}
+      </tbody><tfoot><tr><td>Convocados</td>${cols.map(f => { const ids = turnosDia(f), pp = lista.filter(p => ids.includes(p.id)); const m = pp.filter(p => p.rol === 'Mozo').length, c = pp.filter(p => p.rol === 'Camarera').length; const det = [[m, 'mozo', 'mozos'], [c, 'camarera', 'camareras']].filter(z => z[0]).map(z => `${z[0]} ${z[0] === 1 ? z[1] : z[2]}`).concat(porSeccion(pp).filter(g => g.c !== 'salon').map(g => `${g.pp.length} ${g.c === 'dj' ? g.n : g.n.toLowerCase()}`)); return `<td class="center">${ids.length}${ids.length ? `<div class="small muted" style="font-weight:400">${det.join(' · ')}</div>` : ''}${ids.length ? `<button class="btn-sm" data-copiar="${f}" style="margin-top:4px">Copiar lista</button>` : ''}</td>`; }).join('')}</tr></tfoot></table>
       ${otros.length ? `<div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">De refuerzo · tocá un nombre para sumarlo a esta semana:</div><div style="display:flex;gap:6px;flex-wrap:wrap">${otros.map(p => `<button class="btn-sm" data-extra="${p.id}">+ ${esc(p.nombre)}</button>`).join('')}</div></div>` : ''}`}
   </div>
   <div class="grid2">
     <div class="panel"><div class="panel-h"><h2>Equipo</h2></div>
-      ${lista.length ? `<ul class="list-clean">${[...lista].sort((a, b) => (a.activo === false) - (b.activo === false) || ordenPersonal(a, b)).map(p => `<li><div><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}</span>${esRefuerzo(p) ? ' <span class="badge b-warn">refuerzo</span>' : ''}${p.activo === false ? ' <span class="badge b-cancelado">de baja</span>' : ''}${p.tel ? `<div class="small muted">${esc(fmtTel(p.tel))}</div>` : ''}</div>
-        <div style="display:flex;gap:6px">${p.tel ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(p.tel)}">WhatsApp</a>` : ''}<button class="btn-sm" data-pers="${p.id}">Editar</button></div></li>`).join('')}</ul>` : '<p class="muted">Sin personal cargado.</p>'}
+      ${lista.length ? porSeccion(lista, (a, b) => (a.activo === false) - (b.activo === false) || ordenPersonal(a, b)).map(g => `<div class="small muted" style="text-transform:uppercase;letter-spacing:.03em;font-weight:600;margin:12px 0 2px">${esc(g.n)} · ${g.pp.length}</div><ul class="list-clean">${g.pp.map(p => `<li><div><b>${esc(p.nombre)}</b> <span class="small muted">${esc(p.rol || '')}</span>${esRefuerzo(p) ? ' <span class="badge b-warn">refuerzo</span>' : ''}${p.activo === false ? ' <span class="badge b-cancelado">de baja</span>' : ''}${p.tel ? `<div class="small muted">${esc(fmtTel(p.tel))}</div>` : ''}</div>
+        <div style="display:flex;gap:6px">${p.tel ? `<a class="btn btn-sm btn-wa" target="_blank" href="${waLink(p.tel)}">WhatsApp</a>` : ''}<button class="btn-sm" data-pers="${p.id}">Editar</button></div></li>`).join('')}</ul>`).join('') : '<p class="muted">Sin personal cargado.</p>'}
     </div>
     <div class="panel"><div class="panel-h"><h2>Días trabajados</h2><input type="month" id="persMes" value="${PERS_MES}" style="width:auto"></div>
       ${delMes.length ? `<table><thead><tr><th>Persona</th><th class="num">Días</th><th>Fechas</th></tr></thead><tbody>${resumen.map(r => `<tr><td>${esc(r.p.nombre)} <span class="small muted">${esc(r.p.rol || '')}</span></td><td class="num"><b>${r.fechas.length}</b></td><td class="small">${r.fechas.map(f => `${DIAS_C[dow(f)]} ${fmtD(f).slice(0, 5)}`).join(', ')}</td></tr>`).join('')}</tbody></table>` : `<p class="muted">Sin convocatorias cargadas en ${fmtYM(PERS_MES).toLowerCase()}.</p>`}
@@ -1991,8 +1994,8 @@ VIEWS.personal.after = () => {
   $$('[data-extra]').forEach(b => b.onclick = () => { PERS_EXTRA.add(b.dataset.extra); render(); });
   $$('[data-copiar]').forEach(b => b.onclick = async () => {
     const f = b.dataset.copiar, e = eventoEnFecha(f), ids = turnosDia(f);
-    const pp = personalLista().filter(p => ids.includes(p.id)).sort(ordenPersonal);
-    const txt = `${DIAS[dow(f)]} ${fmtD(f)}${e ? ' · ' + tituloEv(e) : ''}\n` + pp.map(p => `- ${p.nombre} (${p.rol || ''})`).join('\n');
+    const pp = personalLista().filter(p => ids.includes(p.id));
+    const txt = `${DIAS[dow(f)]} ${fmtD(f)}${e ? ' · ' + tituloEv(e) : ''}\n` + porSeccion(pp).map(g => `\n*${g.n}* (${g.pp.length})\n` + g.pp.map(p => `- ${p.nombre}${g.c === 'salon' && p.rol ? ` (${p.rol})` : ''}`).join('\n')).join('\n');
     try { await navigator.clipboard.writeText(txt); toast('Lista copiada: pegala en WhatsApp.'); } catch (err) { modal({ title: 'Lista del día', body: F.area('t', 'Copiala desde acá', txt, 'style="min-height:200px"'), submit: '' }); }
   });
 };
@@ -2009,7 +2012,7 @@ VIEWS.personalhoja = lunes => {
   <div class="print-doc pers-doc">
     <div class="ph"><img src="${LOGO}" alt="Salón Dorado"><div class="right"><b style="font-size:16px">Personal</b><br>Semana del ${fmtD(lunes).slice(0, 5)} al ${fmtD(addDays(lunes, 6))}</div></div>
     <table class="pers-tbl"><thead><tr><th></th>${cols.map(f => { const e = eventoEnFecha(f); return `<th class="center">${DIAS[dow(f)]} ${fmtD(f).slice(0, 5)}<div style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">${e ? esc(tipoEv(e)) + ' · ' + esc(nombreCli(cli(e.clienteId))) : ''}</div></th>`; }).join('')}</tr></thead>
-    <tbody>${fijos.map(fila).join('')}${refuerzo.map(fila).join('')}${vacia}${vacia}</tbody>
+    <tbody>${porSeccion([...fijos, ...refuerzo], (a, b) => esRefuerzo(a) - esRefuerzo(b) || ordenPersonal(a, b)).map(g => `<tr><td colspan="${cols.length + 1}" style="background:#dde6f5;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em">${esc(g.n)}</td></tr>${g.pp.map(fila).join('')}`).join('')}${vacia}${vacia}</tbody>
     <tfoot><tr><td>Total</td>${cols.map(f => `<td class="center">${tot(f) || ''}</td>`).join('')}</tr></tfoot></table>
     ${otros.length ? `<h2>De refuerzo</h2><div class="pers-otros">${otros.map(p => `<div>${esc(p.nombre)}${p.tel ? ` <span style="color:#888">${esc(fmtTel(p.tel))}</span>` : ''}</div>`).join('')}</div>` : ''}
   </div>`;
